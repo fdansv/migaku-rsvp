@@ -1,0 +1,556 @@
+:root {
+  color-scheme: light;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f6f3ec;
+  color: #20201d;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+.app {
+  --bg: #f6f3ec;
+  --panel: #fffdfa;
+  --text: #20201d;
+  --muted: #706b61;
+  --line: #dad2c3;
+  --accent: #16675a;
+  --accent-strong: #0f5148;
+  --danger: #a83a2a;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #191a1d;
+  --panel: #22252a;
+  --text: #f5f2ec;
+  --muted: #aaa49a;
+  --line: #3a3d43;
+  --accent: #67d1bd;
+  --accent-strong: #9ae6d8;
+  --danger: #ff8b7b;
+}
+
+.app[data-theme="contrast"] {
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --text: #050505;
+  --muted: #3a3a3a;
+  --line: #000000;
+  --accent: #0047ff;
+  --accent-strong: #0032b3;
+  --danger: #b00020;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+}
+
+.brand,
+.topbar-actions,
+.section-title,
+.transport,
+.status-strip {
+  display: flex;
+  align-items: center;
+}
+
+.brand {
+  gap: 10px;
+  font-weight: 700;
+}
+
+.topbar-actions {
+  gap: 10px;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) minmax(190px, 260px);
+  min-height: calc(100vh - 64px);
+}
+
+.library,
+.settings {
+  padding: 18px;
+  border-right: 1px solid var(--line);
+}
+
+.settings {
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+
+.section-title {
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.book-list {
+  display: grid;
+  gap: 8px;
+}
+
+.book-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.book-row:hover,
+.book-row.is-selected {
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+.book-select {
+  min-width: 0;
+  padding: 10px 0 10px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.book-select strong,
+.book-select small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-select strong {
+  font-size: 0.94rem;
+}
+
+.book-select small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.delete-button {
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 34px;
+  padding-top: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.delete-button:hover {
+  color: var(--danger);
+}
+
+.reader {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px clamp(18px, 4vw, 56px);
+}
+
+.reader-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.reader-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-stage {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  position: relative;
+  min-height: min(56vh, 560px);
+}
+
+.rsvp-token-display {
+  display: block;
+  position: relative;
+  z-index: 1;
+  width: min(88vw, 720px);
+  min-height: calc(var(--reader-font-size) * 1.25);
+  overflow: hidden;
+  color: var(--text);
+  font-family:
+    "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "Source Han Serif JP", serif;
+  font-size: clamp(40px, var(--reader-font-size), 86px);
+  line-height: 1.15;
+  text-align: center;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.rsvp-sentence-track {
+  --rsvp-track-offset: 0px;
+  display: inline-block;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  white-space: nowrap;
+  transform: translate(calc(-50% + var(--rsvp-track-offset)), -50%);
+  transform-origin: center;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.rsvp-display-token {
+  display: inline-block;
+  min-width: 0.1em;
+  text-underline-offset: 0.12em;
+  cursor: pointer;
+}
+
+.rsvp-display-token + .rsvp-display-token {
+  margin-left: 0.16em;
+}
+
+.rsvp-token-display .migaku-token,
+.rsvp-token-display .migaku-fragment,
+.rsvp-token-display .migaku-surface,
+.rsvp-token-display .migaku-ruby,
+.rsvp-token-display ruby {
+  display: inline !important;
+  line-height: inherit !important;
+}
+
+.rsvp-token-display .migaku-reading,
+.rsvp-token-display .migaku-spacer,
+.rsvp-token-display rt,
+.rsvp-token-display rp {
+  display: none !important;
+}
+
+.rsvp-display-token--active {
+  position: relative;
+  z-index: 2;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rsvp-display-token--active,
+.rsvp-display-token--active * {
+  pointer-events: auto !important;
+}
+
+.rsvp-display-token--context {
+  color: transparent !important;
+  opacity: 0;
+  pointer-events: none;
+  text-decoration-color: transparent !important;
+  white-space: nowrap;
+}
+
+.rsvp-display-token--context,
+.rsvp-display-token--context * {
+  -webkit-text-fill-color: transparent !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  color: transparent !important;
+  pointer-events: none !important;
+  text-decoration-color: transparent !important;
+}
+
+.rsvp-display-token--unknown {
+  text-decoration: underline solid #c34232 0.08em;
+}
+
+.rsvp-display-token--seen,
+.rsvp-display-token--tracked {
+  text-decoration: underline solid #c58718 0.08em;
+}
+
+.rsvp-display-token--known {
+  text-decoration: underline solid #1d806c 0.08em;
+}
+
+.rsvp-display-token--ignored {
+  text-decoration: underline dotted var(--muted) 0.07em;
+}
+
+.rsvp-token-display .rsvp-display-token--context,
+.rsvp-token-display .rsvp-display-token--context * {
+  border-bottom-color: transparent !important;
+  text-decoration: none !important;
+}
+
+.migaku-buffer-surface {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  max-height: 34%;
+  overflow: hidden;
+  padding: 0 18px;
+  opacity: 0.07;
+  pointer-events: none;
+  color: var(--text);
+  font-family:
+    "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "Source Han Serif JP", serif;
+  font-size: 15px;
+  line-height: 1.7;
+  text-align: left;
+  user-select: text;
+  z-index: 0;
+}
+
+.migaku-buffer-surface p {
+  margin: 0 0 0.45em;
+}
+
+.migaku-buffer-surface .is-active-sentence {
+  outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+
+.migaku-buffer-surface .rsvp-migaku-token {
+  color: inherit;
+}
+
+.migaku-buffer-surface .rsvp-active-token {
+  border-bottom: 1px solid var(--accent);
+  color: var(--text);
+}
+
+.status-strip {
+  justify-content: center;
+  gap: 18px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.transport {
+  justify-content: center;
+  gap: 12px;
+}
+
+.icon-button,
+.play-button,
+.import-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.icon-button {
+  width: 40px;
+  padding: 0;
+}
+
+.import-button,
+.play-button {
+  padding: 0 14px;
+}
+
+.play-button {
+  min-width: 112px;
+  min-height: 50px;
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.icon-button:hover,
+.play-button:hover,
+.import-button:hover {
+  border-color: var(--accent);
+}
+
+.import-button input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.migaku-pill {
+  min-width: 112px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.migaku-pill.is-ready {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  color: var(--accent-strong);
+}
+
+progress {
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+progress::-webkit-progress-bar {
+  background: var(--line);
+}
+
+progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.settings input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.settings select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.setting-value {
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.empty-note,
+.empty-reader,
+.error-banner {
+  color: var(--muted);
+}
+
+.empty-reader {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  min-height: 52vh;
+}
+
+.error-banner {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
+  border-radius: 8px;
+  color: var(--danger);
+}
+
+@media (max-width: 940px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .library,
+  .settings {
+    border: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .library {
+    order: 2;
+  }
+
+  .settings {
+    order: 3;
+  }
+
+  .reader {
+    order: 1;
+    min-height: 62vh;
+  }
+}
+
+@media (max-width: 620px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .reader-meta,
+  .status-strip {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .rsvp-token-display {
+    font-size: min(var(--reader-font-size), 72px);
+  }
+}
