@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type FormEvent,
 } from "react";
 import { MigakuSentenceSurface } from "./components/MigakuSentenceSurface";
@@ -38,6 +39,10 @@ import type { Book, ReaderPosition, ReaderSettings } from "./types";
 const BUFFER_SENTENCES_BEHIND = 20;
 const BUFFER_SENTENCES_AHEAD = 100;
 const BUFFER_WINDOW_SIZE = 40;
+
+function hasDraggedFiles(dataTransfer: DataTransfer) {
+  return Array.from(dataTransfer.types).includes("Files");
+}
 
 interface RangeSettingProps {
   label: string;
@@ -105,7 +110,9 @@ export function App() {
   const [autoPaused, setAutoPaused] = useState(false);
   const [skipStopKey, setSkipStopKey] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isFileDragActive, setIsFileDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileDragDepthRef = useRef(0);
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
   const sentenceTrackRef = useRef<HTMLSpanElement>(null);
@@ -422,6 +429,61 @@ export function App() {
     setPosition((previous) => retreatPosition(previous, sentences, settings.chunkSize));
   }
 
+  function resetFileDrag() {
+    fileDragDepthRef.current = 0;
+    setIsFileDragActive(false);
+  }
+
+  function onFileDragEnter(event: ReactDragEvent<HTMLDivElement>) {
+    if (!hasDraggedFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    fileDragDepthRef.current += 1;
+    setIsFileDragActive(true);
+  }
+
+  function onFileDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    if (!hasDraggedFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = isImporting ? "none" : "copy";
+    setIsFileDragActive(true);
+  }
+
+  function onFileDragLeave(event: ReactDragEvent<HTMLDivElement>) {
+    if (!hasDraggedFiles(event.dataTransfer)) {
+      return;
+    }
+
+    fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+    if (fileDragDepthRef.current === 0) {
+      setIsFileDragActive(false);
+    }
+  }
+
+  function onFileDrop(event: ReactDragEvent<HTMLDivElement>) {
+    if (!hasDraggedFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    resetFileDrag();
+
+    if (isImporting) {
+      return;
+    }
+
+    const file = event.dataTransfer.files[0];
+    if (file) {
+      void importBook(file);
+    }
+  }
+
   const progressPercent =
     sentences.length > 0 ? Math.round((safePosition.sentenceIndex / sentences.length) * 100) : 0;
   const activeStatus =
@@ -440,7 +502,27 @@ export function App() {
   }
 
   return (
-    <div className="app" data-theme={settings.theme}>
+    <div
+      className="app"
+      data-theme={settings.theme}
+      onDragEnter={onFileDragEnter}
+      onDragOver={onFileDragOver}
+      onDragLeave={onFileDragLeave}
+      onDrop={onFileDrop}
+    >
+      {isFileDragActive ? (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-panel">
+            <Upload size={34} aria-hidden="true" />
+            <strong>{isImporting ? "Import in progress" : "Drop EPUB to import"}</strong>
+            <span>
+              {isImporting
+                ? "Wait for the current import to finish."
+                : "Release anywhere on this page."}
+            </span>
+          </div>
+        </div>
+      ) : null}
       <header className="topbar">
         <div className="brand">
           <BookOpen size={22} aria-hidden="true" />

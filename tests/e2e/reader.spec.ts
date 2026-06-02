@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { createSmallEpub } from "../fixtures/createSmallEpub";
 
@@ -156,6 +157,37 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
     .poll(() => activeRsvpToken(page).getAttribute("data-mgk-term"))
     .not.toBe("走る");
   await expect(activeRsvpToken(page)).not.toHaveClass(/unknown/);
+});
+
+test("imports an EPUB dropped anywhere on the page", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "dropped.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+
+  const dataTransfer = await createEpubDataTransfer(page, epubPath);
+  await page.locator(".app").dispatchEvent("dragenter", { dataTransfer });
+  await expect(page.locator(".drop-overlay")).toBeVisible();
+  await expect(page.locator(".drop-overlay")).toContainText("Drop EPUB to import");
+
+  await page.locator(".app").dispatchEvent("dragleave", { dataTransfer });
+  await expect(page.locator(".drop-overlay")).toBeHidden();
+
+  await page.locator(".app").dispatchEvent("dragenter", { dataTransfer });
+  await page.locator(".app").dispatchEvent("dragover", { dataTransfer });
+  await page.locator(".app").dispatchEvent("drop", { dataTransfer });
+  await dataTransfer.dispose();
+
+  await expect(page.locator(".drop-overlay")).toBeHidden();
+  await expect(page.getByRole("button", { name: "小さな本 Fixture" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。");
 });
 
 test("keeps Migaku ruby readings out of the visible RSVP layout", async ({ page }, testInfo) => {
@@ -441,6 +473,19 @@ async function expectActiveTokenCentered(page: Page) {
 
 function activeRsvpToken(page: Page) {
   return page.locator('.rsvp-token-display [data-rsvp-visible-token="true"]');
+}
+
+async function createEpubDataTransfer(page: Page, epubPath: string) {
+  const fileBytes = Array.from(await fs.readFile(epubPath));
+
+  return page.evaluateHandle(({ bytes }) => {
+    const dataTransfer = new DataTransfer();
+    const file = new File([new Uint8Array(bytes)], "dropped.epub", {
+      type: "application/epub+zip",
+    });
+    dataTransfer.items.add(file);
+    return dataTransfer;
+  }, { bytes: fileBytes });
 }
 
 test("uses Japanese tokenizer boundaries for inflected constructions", async ({ page }, testInfo) => {
