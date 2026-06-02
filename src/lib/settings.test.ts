@@ -57,4 +57,19 @@ describe("settings persistence", () => {
     saveSettings({ ...DEFAULT_SETTINGS, wpm: 150.6, fontSize: 63.2 });
     expect(loadSettings()).toMatchObject({ wpm: 151, fontSize: 63 });
   });
+
+  it("persists user-entered recap AI settings", () => {
+    saveSettings({
+      ...DEFAULT_SETTINGS,
+      recapApiUrl: " user-entered-url ",
+      recapApiKey: " user-entered-key ",
+      recapModel: " user-entered-model ",
+    });
+
+    expect(loadSettings()).toMatchObject({
+      recapApiUrl: "user-entered-url",
+      recapApiKey: "user-entered-key",
+      recapModel: "user-entered-model",
+    });
+  });
 });

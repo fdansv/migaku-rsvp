@@ -41,6 +41,12 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveText("猫");
   await expectActiveTokenCentered(page);
 
+  await expect(page.getByRole("button", { name: "Recap" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Settings" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await page.getByRole("button", { name: "Settings" }).click();
   await setRangeValue(page.locator("label", { hasText: "Speed" }).locator("input"), "550");
   await expect(page.locator("label", { hasText: "Speed" }).locator(".setting-value")).toHaveText(
     "550 wpm",
@@ -59,6 +65,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   );
 
   await page.reload();
+  await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.locator("label", { hasText: "Speed" }).locator(".setting-value")).toHaveText(
     "550 wpm",
   );
@@ -286,6 +293,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
     timeout: 30_000,
   });
+  await page.getByRole("button", { name: "Settings" }).click();
   await setRangeValue(page.locator("label", { hasText: "Words" }).locator("input"), "1");
 
   await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {

@@ -35,6 +35,9 @@ export function normalizeSettings(value: Partial<ReaderSettings>): ReaderSetting
     stopMode:
       value.stopMode && STOP_MODES.has(value.stopMode) ? value.stopMode : DEFAULT_SETTINGS.stopMode,
     theme: value.theme && THEMES.has(value.theme) ? value.theme : DEFAULT_SETTINGS.theme,
+    recapApiUrl: normalizeString(value.recapApiUrl, DEFAULT_SETTINGS.recapApiUrl, 2_048),
+    recapApiKey: normalizeString(value.recapApiKey, DEFAULT_SETTINGS.recapApiKey, 4_096),
+    recapModel: normalizeString(value.recapModel, DEFAULT_SETTINGS.recapModel, 256),
   };
 }
 
@@ -43,4 +46,11 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
     return fallback;
   }
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function normalizeString(value: unknown, fallback: string, maxLength: number) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  return value.trim().slice(0, maxLength);
 }

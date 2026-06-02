@@ -7,6 +7,9 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   punctuationDelayMs: 260,
   stopMode: "unknown",
   theme: "paper",
+  recapApiUrl: "",
+  recapApiKey: "",
+  recapModel: "",
 };
 
 export function flattenSentences(book?: { chapters: { sentences: Sentence[] }[] }) {

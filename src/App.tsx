@@ -17,12 +17,15 @@ import {
   retreatPosition,
   shouldStopForTokenIndexes,
 } from "./lib/rsvp";
+import { generateAiRecap, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
 import type { Book, ReaderSettings, Sentence } from "./types";
 
 const BUFFER_SENTENCES_BEHIND = 20;
 const BUFFER_SENTENCES_AHEAD = 100;
 const BUFFER_WINDOW_SIZE = 40;
+
+type RecapStatus = "idle" | "loading" | "success" | "error";
 
 export function App() {
   const {
@@ -42,6 +45,18 @@ export function App() {
   const [playing, setPlaying] = useState(false);
   const [autoPaused, setAutoPaused] = useState(false);
   const [skipStopKey, setSkipStopKey] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [recap, setRecap] = useState<{
+    status: RecapStatus;
+    summary: string;
+    error: string;
+    sourceLabel: string;
+  }>({
+    status: "idle",
+    summary: "",
+    error: "",
+    sourceLabel: "",
+  });
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
 
@@ -100,6 +115,10 @@ export function App() {
     setAutoPaused(false);
     setSkipStopKey(null);
   }, [activeKey]);
+
+  useEffect(() => {
+    setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" });
+  }, [selectedBookId]);
 
   useEffect(() => {
     if (!selectedBookId || !currentSentence) {
@@ -219,6 +238,33 @@ export function App() {
     setPosition((previous) => retreatPosition(previous, sentences, settings.chunkSize));
   }
 
+  async function handleRecap() {
+    setAutoPaused(false);
+    setPlaying(false);
+
+    const pages = getRecapPages(selectedBook, currentSentence);
+    const sourceLabel =
+      pages.length === 1 ? "1 previous page" : pages.length > 1 ? `${pages.length} previous pages` : "";
+
+    setRecap({ status: "loading", summary: "", error: "", sourceLabel });
+
+    try {
+      const summary = await generateAiRecap({
+        settings,
+        bookTitle: selectedBook?.title ?? "Untitled book",
+        pages,
+      });
+      setRecap({ status: "success", summary, error: "", sourceLabel });
+    } catch (error) {
+      setRecap({
+        status: "error",
+        summary: "",
+        error: error instanceof Error ? error.message : "Could not generate recap.",
+        sourceLabel,
+      });
+    }
+  }
+
   return (
     <div className="app" data-theme={settings.theme} {...dragHandlers}>
       {isFileDragActive ? <DropOverlay isImporting={isImporting} /> : null}
@@ -229,7 +275,7 @@ export function App() {
         onImportFile={handleImportFile}
       />
 
-      <div className="shell">
+      <div className={`shell${settingsOpen ? "" : " shell--settings-collapsed"}`}>
         <LibrarySidebar
           books={books}
           selectedBookId={selectedBookId}
@@ -252,11 +298,24 @@ export function App() {
           fontSize={settings.fontSize}
           playing={playing}
           autoPaused={autoPaused}
+          recapStatus={recap.status}
+          recapSummary={recap.summary}
+          recapError={recap.error}
+          recapSourceLabel={recap.sourceLabel}
           onPrevious={goPrevious}
           onNext={goNext}
           onTogglePlayback={togglePlayback}
+          onRecap={handleRecap}
+          onCloseRecap={() =>
+            setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" })
+          }
         />
-        <SettingsPanel settings={settings} onChange={updateSettings} />
+        <SettingsPanel
+          settings={settings}
+          isOpen={settingsOpen}
+          onToggle={() => setSettingsOpen((previous) => !previous)}
+          onChange={updateSettings}
+        />
       </div>
     </div>
   );

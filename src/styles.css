@@ -144,6 +144,10 @@ button {
   min-height: calc(100vh - 64px);
 }
 
+.shell--settings-collapsed {
+  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) auto;
+}
+
 .library,
 .settings {
   padding: 18px;
@@ -238,8 +242,13 @@ button {
   padding: 18px clamp(18px, 4vw, 56px);
 }
 
+.reader--with-recap {
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+}
+
 .reader-meta {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   color: var(--muted);
@@ -249,6 +258,14 @@ button {
 .reader-meta span {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-progress {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
   white-space: nowrap;
 }
 
@@ -421,7 +438,8 @@ button {
 
 .icon-button,
 .play-button,
-.import-button {
+.import-button,
+.recap-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -443,6 +461,14 @@ button {
   padding: 0 14px;
 }
 
+.recap-button {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .play-button {
   min-width: 112px;
   min-height: 50px;
@@ -453,8 +479,14 @@ button {
 
 .icon-button:hover,
 .play-button:hover,
-.import-button:hover {
+.import-button:hover,
+.recap-button:hover {
   border-color: var(--accent);
+}
+
+.recap-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .import-button input {
@@ -496,10 +528,108 @@ progress::-webkit-progress-value {
   background: var(--accent);
 }
 
+.recap-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 10px 28px color-mix(in srgb, #000000 8%, transparent);
+}
+
+.recap-panel--error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+
+.recap-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recap-panel-header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.recap-panel-header strong {
+  font-size: 0.9rem;
+}
+
+.recap-panel-header span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recap-close {
+  width: 32px;
+  min-height: 32px;
+  flex: 0 0 auto;
+}
+
+.recap-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.94rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .settings {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.settings.is-collapsed {
+  padding: 10px;
+}
+
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.settings.is-collapsed .settings-toggle {
+  justify-content: center;
+  width: 40px;
+  padding: 0;
+}
+
+.settings.is-collapsed .settings-toggle span,
+.settings.is-collapsed .settings-toggle-icon {
+  display: none;
+}
+
+.settings-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 .settings label {
@@ -515,9 +645,11 @@ progress::-webkit-progress-value {
   accent-color: var(--accent);
 }
 
+.settings input:not([type="range"]),
 .settings select {
   width: 100%;
   min-height: 36px;
+  padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);

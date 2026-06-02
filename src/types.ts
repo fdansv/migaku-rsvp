@@ -61,6 +61,9 @@ export interface ReaderSettings {
   punctuationDelayMs: number;
   stopMode: StopMode;
   theme: ThemeMode;
+  recapApiUrl: string;
+  recapApiKey: string;
+  recapModel: string;
 }
 
 export interface MigakuScanResult {

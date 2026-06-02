@@ -1,4 +1,4 @@
-import { BookOpen, ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Pause, Play, Sparkles, X } from "lucide-react";
 import {
   useLayoutEffect,
   useMemo,
@@ -31,9 +31,15 @@ interface ReaderPaneProps {
   fontSize: number;
   playing: boolean;
   autoPaused: boolean;
+  recapStatus: "idle" | "loading" | "success" | "error";
+  recapSummary: string;
+  recapError: string;
+  recapSourceLabel: string;
   onPrevious: () => void;
   onNext: () => void;
   onTogglePlayback: () => void;
+  onRecap: () => void;
+  onCloseRecap: () => void;
 }
 
 export function ReaderPane({
@@ -52,9 +58,15 @@ export function ReaderPane({
   fontSize,
   playing,
   autoPaused,
+  recapStatus,
+  recapSummary,
+  recapError,
+  recapSourceLabel,
   onPrevious,
   onNext,
   onTogglePlayback,
+  onRecap,
+  onCloseRecap,
 }: ReaderPaneProps) {
   const sentenceTrackRef = useRef<HTMLSpanElement>(null);
   const displayTokenIndexSet = useMemo(() => new Set(displayTokenIndexes), [displayTokenIndexes]);
@@ -116,7 +128,10 @@ export function ReaderPane({
   ]);
 
   return (
-    <main className="reader" aria-live="polite">
+    <main
+      className={`reader${recapStatus === "idle" ? "" : " reader--with-recap"}`}
+      aria-live="polite"
+    >
       {error ? <div className="error-banner">{error}</div> : null}
 
       {!currentSentence ? (
@@ -128,10 +143,59 @@ export function ReaderPane({
         <>
           <div className="reader-meta">
             <span>{selectedBook?.title}</span>
-            <span>
-              {progressPercent}% · {safePosition.sentenceIndex + 1}/{sentences.length}
-            </span>
+            <div className="reader-progress">
+              <span>
+                {progressPercent}% · {safePosition.sentenceIndex + 1}/{sentences.length}
+              </span>
+              <button
+                className="recap-button"
+                type="button"
+                disabled={recapStatus === "loading"}
+                aria-busy={recapStatus === "loading"}
+                onClick={onRecap}
+              >
+                <Sparkles size={15} aria-hidden="true" />
+                <span>Recap</span>
+              </button>
+            </div>
           </div>
+
+          {recapStatus !== "idle" ? (
+            <section
+              className={`recap-panel recap-panel--${recapStatus}`}
+              aria-live="polite"
+              aria-label="Recap"
+            >
+              <div className="recap-panel-header">
+                <div>
+                  <strong>
+                    {recapStatus === "loading"
+                      ? "Generating recap"
+                      : recapStatus === "error"
+                        ? "Recap unavailable"
+                        : "Recap"}
+                  </strong>
+                  {recapSourceLabel ? <span>{recapSourceLabel}</span> : null}
+                </div>
+                <button
+                  aria-label="Close recap"
+                  className="icon-button recap-close"
+                  type="button"
+                  onClick={onCloseRecap}
+                  title="Close recap"
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </div>
+              <p className="recap-text">
+                {recapStatus === "loading"
+                  ? "Waiting for the configured AI endpoint."
+                  : recapStatus === "error"
+                    ? recapError
+                    : recapSummary}
+              </p>
+            </section>
+          ) : null}
 
           <div className="reader-stage">
             <div

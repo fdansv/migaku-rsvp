@@ -35,7 +35,7 @@ export function Topbar({
         >
           Migaku {migakuParsed ? "parsed" : migakuTimedOut ? "idle" : "waiting"}
         </span>
-        <label className="icon-button import-button" title="Import EPUB">
+        <label className="import-button" title="Import EPUB">
           <Upload size={18} aria-hidden="true" />
           <span>{isImporting ? "Importing" : "Import"}</span>
           <input
