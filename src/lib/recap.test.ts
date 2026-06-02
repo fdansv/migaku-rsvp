@@ -102,8 +102,160 @@ describe("recap helpers", () => {
     });
     expect(JSON.parse(String(init?.body))).toMatchObject({
       model: "user-entered-model",
-      temperature: 0.2,
+      max_completion_tokens: 700,
     });
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty("temperature");
+  });
+
+  it("switches to max_tokens when the model rejects max_completion_tokens", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              message:
+                "Unsupported parameter: 'max_completion_tokens' is not supported with this model. Use 'max_tokens' instead.",
+            },
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: "Summary." } }] }), {
+          status: 200,
+        }),
+      );
+    globalThis.fetch = fetchMock;
+
+    const settings: ReaderSettings = {
+      ...DEFAULT_SETTINGS,
+      recapApiUrl: "https://example.invalid/recap",
+      recapApiKey: "user-entered-key",
+      recapModel: "user-entered-model",
+    };
+
+    await expect(
+      generateAiRecap({
+        settings,
+        bookTitle: "本",
+        pages: [{ index: 0, title: "第一章", text: "猫が走る。" }],
+      }),
+    ).resolves.toBe("Summary.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, firstInit] = fetchMock.mock.calls[0];
+    const [, secondInit] = fetchMock.mock.calls[1];
+    expect(JSON.parse(String(firstInit?.body))).toMatchObject({
+      max_completion_tokens: 700,
+    });
+    expect(JSON.parse(String(secondInit?.body))).toMatchObject({
+      max_tokens: 700,
+    });
+    expect(JSON.parse(String(secondInit?.body))).not.toHaveProperty("max_completion_tokens");
+  });
+
+  it("retries when the response is reasoning-only for gpt-5 style models", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "chatcmpl-test",
+            object: "chat.completion",
+            created: 1780425090,
+            model: "gpt-5-nano-2025-08-07",
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: "assistant",
+                  content: "",
+                  refusal: null,
+                  annotations: [],
+                },
+                finish_reason: "length",
+              },
+            ],
+            usage: {
+              completion_tokens: 700,
+              prompt_tokens: 985,
+              total_tokens: 1685,
+              completion_tokens_details: {
+                reasoning_tokens: 700,
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: "Summary." } }] }), {
+          status: 200,
+        }),
+      );
+    globalThis.fetch = fetchMock;
+
+    const settings: ReaderSettings = {
+      ...DEFAULT_SETTINGS,
+      recapApiUrl: "https://example.invalid/recap",
+      recapApiKey: "user-entered-key",
+      recapModel: "gpt-5-nano-2025-08-07",
+    };
+
+    await expect(
+      generateAiRecap({
+        settings,
+        bookTitle: "本",
+        pages: [{ index: 0, title: "第一章", text: "猫が走る。" }],
+      }),
+    ).resolves.toBe("Summary.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, firstInit] = fetchMock.mock.calls[0];
+    const [, secondInit] = fetchMock.mock.calls[1];
+    expect(JSON.parse(String(firstInit?.body))).toMatchObject({
+      max_completion_tokens: 700,
+    });
+    expect(JSON.parse(String(firstInit?.body))).not.toHaveProperty("reasoning_effort");
+    expect(JSON.parse(String(secondInit?.body))).toMatchObject({
+      reasoning_effort: "low",
+    });
+  });
+
+  it("does not retry with max_tokens when max_completion_tokens is already in use", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message:
+              "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
+          },
+        }),
+        { status: 400 },
+      ),
+    );
+    globalThis.fetch = fetchMock;
+
+    const settings: ReaderSettings = {
+      ...DEFAULT_SETTINGS,
+      recapApiUrl: "https://example.invalid/recap",
+      recapApiKey: "user-entered-key",
+      recapModel: "user-entered-model",
+    };
+
+    await expect(
+      generateAiRecap({
+        settings,
+        bookTitle: "本",
+        pages: [{ index: 0, title: "第一章", text: "猫が走る。" }],
+      }),
+    ).rejects.toThrow("AI request failed.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, firstInit] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(firstInit?.body))).toMatchObject({
+      max_completion_tokens: 700,
+    });
+    expect(JSON.parse(String(firstInit?.body))).not.toHaveProperty("max_tokens");
   });
 });
 

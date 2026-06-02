@@ -4,6 +4,7 @@ export const RECAP_PAGE_LIMIT = 5;
 
 const MAX_RECAP_CONTEXT_CHARS = 16_000;
 const MAX_RECAP_TOKENS = 700;
+const REASONING_FALLBACK_TOKENS = 2_000;
 
 export interface RecapPage {
   index: number;
@@ -75,7 +76,7 @@ export async function generateAiRecap({
     throw new Error("No previous text is available to recap yet.");
   }
 
-  const payload: Record<string, unknown> = {
+  const basePayload: Record<string, unknown> = {
     messages: [
       {
         role: "system",
@@ -87,34 +88,170 @@ export async function generateAiRecap({
         content: buildRecapPrompt(bookTitle, pages),
       },
     ],
-    max_tokens: MAX_RECAP_TOKENS,
-    temperature: 0.2,
+    max_completion_tokens: MAX_RECAP_TOKENS,
   };
 
   if (model) {
-    payload.model = model;
+    basePayload.model = model;
   }
 
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  async function post(payloadToSend: Record<string, unknown>) {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payloadToSend),
+    });
 
-  if (!response.ok) {
-    throw new Error(`AI request failed (${response.status}).`);
+    const bodyText = await response.text();
+    const parsedBody = parseJson(bodyText);
+
+    if (!response.ok) {
+      let parsedMessage = `AI request failed (${response.status}).`;
+      try {
+        const parsed = JSON.parse(bodyText) as { error?: { message?: string } };
+        if (typeof parsed?.error?.message === "string") {
+          parsedMessage = parsed.error.message;
+        }
+      } catch {
+        // keep fallback message
+      }
+
+      const error = new Error(parsedMessage) as Error & {
+        status?: number;
+        body?: string;
+      };
+      error.status = response.status;
+      error.body = bodyText;
+      throw error;
+    }
+
+    const summary = extractSummaryFromJson(parsedBody ?? bodyText).trim();
+
+    return {
+      summary,
+      parsedBody,
+    };
   }
 
-  const bodyText = await response.text();
-  const summary = extractSummaryFromResponse(bodyText);
-  if (!summary) {
-    throw new Error("The AI response did not include a readable summary.");
+  const buildPayload = ({
+    useMaxCompletionTokens,
+    maxCompletionTokens,
+    useReasoningEffort,
+  }: {
+    useMaxCompletionTokens: boolean;
+    maxCompletionTokens: number;
+    useReasoningEffort: boolean;
+  }) => {
+    const payload = { ...basePayload };
+    if (useMaxCompletionTokens) {
+      payload.max_completion_tokens = maxCompletionTokens;
+      delete payload.max_tokens;
+    } else {
+      payload.max_tokens = maxCompletionTokens;
+      delete payload.max_completion_tokens;
+    }
+    if (useReasoningEffort) {
+      payload.reasoning_effort = "low";
+    } else {
+      delete payload.reasoning_effort;
+    }
+    return payload;
+  };
+
+  let useMaxCompletionTokens = true;
+  let maxCompletionTokens = MAX_RECAP_TOKENS;
+  let useReasoningEffort = false;
+  const maxAttempts = 5;
+  let didIncreaseTokens = false;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const { summary, parsedBody } = await post(
+        buildPayload({
+          useMaxCompletionTokens,
+          maxCompletionTokens,
+          useReasoningEffort,
+        }),
+      );
+      if (summary) {
+        return summary;
+      }
+
+      const reasoningOnlyOutput = hasReasoningOnlyOutput({ parsedBody, summary });
+
+      if (reasoningOnlyOutput && !useReasoningEffort) {
+        useReasoningEffort = true;
+        continue;
+      }
+
+      if (reasoningOnlyOutput && !didIncreaseTokens) {
+        maxCompletionTokens = Math.max(REASONING_FALLBACK_TOKENS, maxCompletionTokens * 2);
+        didIncreaseTokens = true;
+        continue;
+      }
+
+      throw new Error("The AI response did not include a readable summary.");
+    } catch (error) {
+      const parsedMessage = error instanceof Error ? error.message : "";
+      const status = (error as Error & { status?: number }).status;
+
+      if (status !== 400) {
+        if (parsedMessage.includes("AI request failed (")) {
+          throw error instanceof Error
+            ? error
+            : new Error("AI request failed with an unknown error.");
+        }
+
+        throw error instanceof Error
+          ? new Error(`AI request failed. ${parsedMessage || "Please check your endpoint and model."}`)
+          : new Error("AI request failed.");
+      }
+
+      if (
+        parsedMessage.includes("Unsupported parameter: 'max_tokens'") &&
+        !useMaxCompletionTokens
+      ) {
+        useMaxCompletionTokens = true;
+        continue;
+      }
+
+      if (
+        parsedMessage.includes("Unsupported parameter: 'max_completion_tokens'") &&
+        useMaxCompletionTokens
+      ) {
+        useMaxCompletionTokens = false;
+        continue;
+      }
+
+      if (
+        parsedMessage.includes("Unsupported parameter: 'reasoning_effort'") &&
+        useReasoningEffort
+      ) {
+        useReasoningEffort = false;
+        if (!didIncreaseTokens) {
+          maxCompletionTokens = Math.max(REASONING_FALLBACK_TOKENS, maxCompletionTokens * 2);
+          didIncreaseTokens = true;
+          continue;
+        }
+        throw new Error(`AI request failed. ${parsedMessage}`);
+      }
+
+      if (parsedMessage.includes("AI request failed (")) {
+        throw error instanceof Error
+          ? error
+          : new Error("AI request failed with an unknown error.");
+      }
+
+      throw error instanceof Error
+        ? new Error(`AI request failed. ${parsedMessage || "Please check your endpoint and model."}`)
+        : new Error("AI request failed.");
+    }
   }
 
-  return summary;
+  throw new Error("AI request failed. No compatible payload was accepted.");
 }
 
 export function buildRecapPrompt(bookTitle: string, pages: RecapPage[]) {
@@ -216,6 +353,53 @@ function extractSummaryFromJson(value: unknown): string {
   }
 
   return "";
+}
+
+function parseJson(bodyText: string) {
+  try {
+    return JSON.parse(bodyText) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function hasReasoningOnlyOutput({
+  parsedBody,
+  summary,
+}: {
+  parsedBody: unknown;
+  summary: string;
+}) {
+  if (summary.trim()) {
+    return false;
+  }
+
+  if (!isRecord(parsedBody) || !isRecord(parsedBody.usage)) {
+    return false;
+  }
+
+  const usage = parsedBody.usage as Record<string, unknown>;
+  const completionTokens = typeof usage.completion_tokens === "number" ? usage.completion_tokens : null;
+  const completionDetails = isRecord(usage.completion_tokens_details)
+    ? usage.completion_tokens_details
+    : null;
+  const reasoningTokens =
+    typeof completionDetails?.reasoning_tokens === "number" ? completionDetails.reasoning_tokens : 0;
+
+  if (!completionTokens || reasoningTokens < completionTokens) {
+    return false;
+  }
+
+  const choices = Array.isArray(parsedBody.choices) ? parsedBody.choices : [];
+  const firstChoice = (choices[0] ?? null) as unknown;
+  if (!isRecord(firstChoice)) {
+    return false;
+  }
+  const finishReason = firstChoice.finish_reason;
+  return (
+    finishReason === "length" ||
+    finishReason === "incomplete"
+  );
 }
 
 function textFromValue(value: unknown) {
