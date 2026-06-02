@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://fdansv.github.io/migaku-rsvp/sitemap.xml

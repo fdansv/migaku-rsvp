@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Migaku RSVP social preview">
+  <rect width="1200" height="630" fill="#f6f3ec" />
+  <rect x="44" y="44" width="1112" height="542" rx="28" fill="#fffdfa" stroke="#dad2c3" stroke-width="2" />
+
+  <rect x="84" y="84" width="380" height="462" rx="20" fill="#20201d" />
+  <rect x="116" y="118" width="52" height="52" rx="12" fill="#16675a" />
+  <path d="M130 132c0-4.4 3.6-8 8-8h11c6.1 0 11 4.9 11 11v28c0-6.1-4.9-11-11-11h-11c-4.4 0-8-3.6-8-8v-12Z" fill="#fffdfa" />
+  <path d="M154 124h11c4.4 0 8 3.6 8 8v12c0 4.4-3.6 8-8 8h-11c-6.1 0-11 4.9-11 11v-28c0-6.1 4.9-11 11-11Z" fill="#f6f3ec" />
+
+  <text x="116" y="230" fill="#fffdfa" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="58" font-weight="800">Migaku</text>
+  <text x="116" y="296" fill="#fffdfa" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="58" font-weight="800">RSVP</text>
+  <rect x="116" y="332" width="82" height="6" rx="3" fill="#67d1bd" />
+  <text x="116" y="382" fill="#f5f2ec" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="24" font-weight="650">Local EPUB reading for</text>
+  <text x="116" y="416" fill="#f5f2ec" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="24" font-weight="650">Japanese study sessions.</text>
+
+  <g fill="#aaa49a" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="19" font-weight="600">
+    <text x="116" y="460">EPUB import</text>
+    <text x="116" y="494">Migaku-aware pauses</text>
+    <text x="116" y="528">Browser-local library</text>
+  </g>
+  <circle cx="100" cy="454" r="5" fill="#67d1bd" />
+  <circle cx="100" cy="488" r="5" fill="#c58718" />
+  <circle cx="100" cy="522" r="5" fill="#c34232" />
+
+  <rect x="520" y="96" width="560" height="412" rx="22" fill="#f6f3ec" stroke="#dad2c3" stroke-width="2" />
+  <rect x="520" y="96" width="560" height="62" rx="22" fill="#fffdfa" />
+  <path d="M520 136h560v22H520z" fill="#fffdfa" />
+  <circle cx="558" cy="128" r="7" fill="#c34232" />
+  <circle cx="584" cy="128" r="7" fill="#c58718" />
+  <circle cx="610" cy="128" r="7" fill="#1d806c" />
+  <rect x="870" y="115" width="88" height="28" rx="14" fill="#e9f3ef" />
+  <text x="890" y="135" fill="#0f5148" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="800">parsed</text>
+  <rect x="974" y="115" width="44" height="28" rx="8" fill="#16675a" />
+  <path d="M990 123v14l12-7z" fill="#fffdfa" />
+
+  <rect x="548" y="184" width="148" height="288" rx="14" fill="#fffdfa" stroke="#dad2c3" />
+  <text x="572" y="222" fill="#706b61" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="800">Library</text>
+  <rect x="572" y="248" width="96" height="10" rx="5" fill="#dad2c3" />
+  <rect x="572" y="278" width="78" height="10" rx="5" fill="#dad2c3" />
+  <rect x="572" y="326" width="104" height="12" rx="6" fill="#16675a" />
+  <rect x="572" y="358" width="74" height="10" rx="5" fill="#dad2c3" />
+
+  <rect x="728" y="184" width="324" height="288" rx="14" fill="#fffdfa" stroke="#dad2c3" />
+  <text x="760" y="230" fill="#706b61" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="17" font-weight="700">Chapter 03</text>
+  <text x="780" y="336" fill="#20201d" font-family="'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif" font-size="64" font-weight="700">明日の朝</text>
+  <line x1="856" y1="352" x2="976" y2="352" stroke="#c34232" stroke-width="6" stroke-linecap="round" />
+  <rect x="768" y="410" width="216" height="8" rx="4" fill="#dad2c3" />
+  <rect x="768" y="410" width="118" height="8" rx="4" fill="#16675a" />
+  <rect x="806" y="442" width="56" height="28" rx="14" fill="#f8e8d0" />
+  <text x="823" y="461" fill="#8a5708" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="800">i+1</text>
+  <rect x="874" y="442" width="96" height="28" rx="14" fill="#f4d9d5" />
+  <text x="891" y="461" fill="#8a291f" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="800">unknown</text>
+
+  <text x="520" y="548" fill="#706b61" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="20" font-weight="650">Read faster, pause smarter.</text>
+  <text x="520" y="578" fill="#706b61" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="20" font-weight="650">Keep sentence context visible for Migaku.</text>
+</svg>

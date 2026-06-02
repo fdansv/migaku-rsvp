@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Migaku RSVP">
+  <rect width="64" height="64" rx="12" fill="#16675a" />
+  <path
+    d="M16 18c0-2.2 1.8-4 4-4h10c3.3 0 6 2.7 6 6v30c0-3.3-2.7-6-6-6H20c-2.2 0-4-1.8-4-4V18Z"
+    fill="#fffdfa"
+  />
+  <path
+    d="M48 18c0-2.2-1.8-4-4-4H34c-3.3 0-6 2.7-6 6v30c0-3.3 2.7-6 6-6h10c2.2 0 4-1.8 4-4V18Z"
+    fill="#f6f3ec"
+  />
+  <path d="M22 24h9M22 31h9M37 24h7M37 31h7" stroke="#16675a" stroke-width="3" stroke-linecap="round" />
+</svg>
