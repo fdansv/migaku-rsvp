@@ -300,18 +300,31 @@ button {
   position: absolute;
   top: 50%;
   left: 50%;
+  height: 1.15em;
+  line-height: 1.15;
   white-space: nowrap;
   transform: translate(calc(-50% + var(--rsvp-track-offset)), -50%);
   transform-origin: center;
+  z-index: 2;
   will-change: transform;
   pointer-events: none;
 }
 
 .rsvp-display-token {
   display: inline-block;
+  line-height: inherit;
   min-width: 0.1em;
+  position: relative;
   text-underline-offset: 0.12em;
+  transition: none !important;
   cursor: pointer;
+}
+
+.rsvp-token-display .rsvp-display-token,
+.rsvp-token-display .rsvp-display-token * {
+  border-bottom: 0 !important;
+  text-decoration: none !important;
+  transition: none !important;
 }
 
 .rsvp-display-token + .rsvp-display-token {
@@ -325,6 +338,20 @@ button {
 .rsvp-token-display ruby {
   display: inline !important;
   line-height: inherit !important;
+}
+
+.rsvp-token-display .rsvp-display-token.migaku-token {
+  display: inline-block !important;
+  position: relative !important;
+  top: auto !important;
+  bottom: auto !important;
+  margin-block: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  line-height: inherit !important;
+  vertical-align: baseline !important;
+  transform: none !important;
+  transition: none !important;
 }
 
 .rsvp-token-display .migaku-reading,
@@ -365,26 +392,75 @@ button {
 }
 
 .rsvp-display-token--unknown {
-  text-decoration: underline solid #c34232 0.08em;
+  --rsvp-status-underline-color: #c34232;
+  --rsvp-status-underline-opacity: 1;
 }
 
 .rsvp-display-token--seen,
 .rsvp-display-token--tracked {
-  text-decoration: underline solid #c58718 0.08em;
+  --rsvp-status-underline-color: #c58718;
+  --rsvp-status-underline-opacity: 1;
 }
 
 .rsvp-display-token--known {
-  text-decoration: underline solid #1d806c 0.08em;
+  --rsvp-status-underline-color: #1d806c;
+  --rsvp-status-underline-opacity: 1;
 }
 
 .rsvp-display-token--ignored {
-  text-decoration: underline dotted var(--muted) 0.07em;
+  --rsvp-status-underline-color: var(--muted);
+  --rsvp-status-underline-opacity: 1;
+}
+
+.rsvp-display-token::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0.02em;
+  left: 0;
+  height: 0.08em;
+  background: var(--rsvp-status-underline-color, transparent);
+  opacity: var(--rsvp-status-underline-opacity, 0);
+  pointer-events: none;
 }
 
 .rsvp-token-display .rsvp-display-token--context,
 .rsvp-token-display .rsvp-display-token--context * {
   border-bottom-color: transparent !important;
   text-decoration: none !important;
+}
+
+.rsvp-token-display--show-context {
+  overflow: visible;
+}
+
+.rsvp-token-display::before,
+.rsvp-token-display::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  opacity: 0;
+  color: color-mix(in srgb, var(--text) 72%, transparent);
+  pointer-events: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transition: opacity 180ms ease;
+}
+
+.rsvp-token-display::before {
+  bottom: calc(50% + 0.68em);
+  content: attr(data-rsvp-context-before);
+}
+
+.rsvp-token-display::after {
+  top: calc(50% + 0.68em);
+  content: attr(data-rsvp-context-after);
+}
+
+.rsvp-token-display--show-context::before,
+.rsvp-token-display--show-context::after {
+  opacity: 0.62;
 }
 
 .migaku-buffer-surface {
@@ -427,8 +503,23 @@ button {
 .status-strip {
   justify-content: center;
   gap: 18px;
+  height: 20px;
+  overflow: hidden;
   color: var(--muted);
   font-size: 0.86rem;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.status-strip span {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  line-height: 20px;
+}
+
+.status-strip * {
+  line-height: inherit !important;
 }
 
 .transport {
@@ -723,6 +814,12 @@ progress::-webkit-progress-value {
     flex-direction: column;
     align-items: center;
     gap: 6px;
+  }
+
+  .status-strip {
+    height: auto;
+    min-height: 46px;
+    overflow: visible;
   }
 
   .rsvp-token-display {

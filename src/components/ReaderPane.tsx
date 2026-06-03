@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
   type RefObject,
 } from "react";
@@ -69,10 +70,36 @@ export function ReaderPane({
   onCloseRecap,
 }: ReaderPaneProps) {
   const sentenceTrackRef = useRef<HTMLSpanElement>(null);
+  const [sentenceContextHovered, setSentenceContextHovered] = useState(false);
   const displayTokenIndexSet = useMemo(() => new Set(displayTokenIndexes), [displayTokenIndexes]);
+  const displayStartTokenIndex =
+    displayTokenIndexes.length > 0 ? Math.min(...displayTokenIndexes) : -1;
+  const displayEndTokenIndex =
+    displayTokenIndexes.length > 0 ? Math.max(...displayTokenIndexes) : -1;
+  const sentenceContextBefore =
+    currentSentence && displayStartTokenIndex > 0
+      ? currentSentence.tokens
+          .slice(0, displayStartTokenIndex)
+          .map((token) => token.text)
+          .join("")
+      : "";
+  const sentenceContextAfter =
+    currentSentence && displayEndTokenIndex >= 0
+      ? currentSentence.tokens
+          .slice(displayEndTokenIndex + 1)
+          .map((token) => token.text)
+          .join("")
+      : "";
+  const showSentenceContext = !playing && sentenceContextHovered;
   const progressPercent =
     sentences.length > 0 ? Math.round((safePosition.sentenceIndex / sentences.length) * 100) : 0;
   const activeStatus = getActiveStatus(displayTokenIndexes, migaku.statuses);
+
+  useLayoutEffect(() => {
+    if (playing && sentenceContextHovered) {
+      setSentenceContextHovered(false);
+    }
+  }, [playing, sentenceContextHovered]);
 
   useLayoutEffect(() => {
     const display = rsvpDisplayRef.current;
@@ -104,7 +131,7 @@ export function ReaderPane({
       const activeCenter = activeLeft + (activeRight - activeLeft) / 2;
       const trackCenter = track.scrollWidth / 2;
       const offset = trackCenter - activeCenter;
-      track.style.setProperty("--rsvp-track-offset", `${Math.round(offset * 100) / 100}px`);
+      track.style.setProperty("--rsvp-track-offset", `${Math.round(offset)}px`);
     }
 
     alignTrack();
@@ -200,12 +227,26 @@ export function ReaderPane({
           <div className="reader-stage">
             <div
               ref={rsvpDisplayRef}
-              className="rsvp-token-display"
+              className={[
+                "rsvp-token-display",
+                playing ? undefined : "rsvp-token-display--stopped",
+                showSentenceContext ? "rsvp-token-display--show-context" : undefined,
+              ]
+                .filter(Boolean)
+                .join(" ")}
               lang="ja"
               data-rsvp-sentence-id={currentSentence.id}
               data-rsvp-display-text={displayText}
+              data-rsvp-context-before={sentenceContextBefore}
+              data-rsvp-context-after={sentenceContextAfter}
               data-mgk-sentence={currentSentence.text}
               aria-label={displayText}
+              onMouseEnter={() => {
+                if (!playing) {
+                  setSentenceContextHovered(true);
+                }
+              }}
+              onMouseLeave={() => setSentenceContextHovered(false)}
               style={{ "--reader-font-size": `${fontSize}px` } as CSSProperties}
             >
               <span
@@ -227,7 +268,7 @@ export function ReaderPane({
                         isDisplayToken
                           ? "rsvp-display-token--active"
                           : "rsvp-display-token--context",
-                        mirror?.className,
+                        mirror ? "migaku-token" : undefined,
                         tokenStatus && tokenStatus !== "unparsed"
                           ? `rsvp-display-token--${tokenStatus}`
                           : undefined,

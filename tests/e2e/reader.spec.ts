@@ -27,15 +27,24 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
     "opacity",
     "0",
   );
-  await expectNoPseudoFallback(page);
+  await expect(page.locator(".rsvp-token-display")).toHaveClass(/rsvp-token-display--stopped/);
+  await page.locator(".rsvp-token-display").hover();
+  await expectContextSentenceVisible(page);
+  await page.mouse.move(0, 0);
+  await expectContextSentenceHidden(page);
+  await expectRsvpTokensHaveNoTransition(page);
   await expectActiveTokenCentered(page);
+  const initialActiveMiddle = await activeTokenMiddle(page);
 
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。");
   await expectVisibleSentenceText(page, "猫が走る。");
   await expectRsvpDisplayText(page, "が");
   await expect(activeRsvpToken(page)).toHaveText("が");
+  await expectContextSentenceHidden(page);
+  await expectRsvpTokensHaveNoTransition(page);
   await expectActiveTokenCentered(page);
+  await expectActiveTokenMiddleToMatch(page, initialActiveMiddle);
   await page.getByRole("button", { name: "Previous" }).click();
   await expectRsvpDisplayText(page, "猫");
   await expect(activeRsvpToken(page)).toHaveText("猫");
@@ -103,6 +112,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveText("猫");
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-sentence", "猫が走る。");
+  await expectActiveStatusUnderlineIsOverlay(page);
   await activeRsvpToken(page).evaluate((element) => {
     const display = element.closest(".rsvp-token-display");
     display?.querySelector(".rsvp-sentence-track")?.setAttribute("data-mgk-sentence", "猫");
@@ -129,6 +139,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveText("が");
   await expect(activeRsvpToken(page)).toHaveClass(/known/);
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-sentence", "猫が走る。");
+  await expectActiveStatusUnderlineIsOverlay(page);
   await expectActiveTokenCentered(page);
   await page.getByRole("button", { name: "Previous" }).click();
   await expectRsvpDisplayText(page, "猫");
@@ -195,6 +206,99 @@ test("imports an EPUB dropped anywhere on the page", async ({ page }, testInfo) 
     timeout: 30_000,
   });
   await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。");
+});
+
+test("keeps active line stable across status underline changes", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "status-stability.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {
+    surface.innerHTML = `
+      <span class="migaku-token unknown" data-mgk-term="猫" data-mgk-known-status="UNKNOWN" data-mgk-sentence="猫">
+        <span class="migaku-surface">猫</span>
+      </span>
+      <span class="migaku-token known" data-mgk-term="が" data-mgk-known-status="KNOWN" data-mgk-sentence="が">
+        <span class="migaku-surface">が</span>
+      </span>
+      <span class="migaku-token known" data-mgk-term="走る" data-mgk-known-status="KNOWN" data-mgk-sentence="走る">
+        <span class="migaku-surface">走る</span>
+      </span>
+      <span>。</span>
+    `;
+  });
+
+  await expect(page.locator(".migaku-pill")).toContainText("parsed");
+  await expect(activeRsvpToken(page)).toHaveText("猫");
+  await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
+  await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
+  await expectVisibleRsvpTokensUseOnlyRsvpClasses(page);
+  await expectActiveStatusUnderlineIsOverlay(page);
+  await expectActiveTokenCentered(page);
+  const unknownActiveMiddle = await activeTokenMiddle(page);
+  await expectStatusStripStableRow(page);
+  await page.addStyleTag({
+    content: ".status-strip.is-jittery span:first-child { font-size: 18px; line-height: normal; }",
+  });
+  await page.locator(".status-strip").evaluate((element) => element.classList.add("is-jittery"));
+  await expectStatusStripStableRow(page);
+  await expectActiveTokenMiddleToMatch(page, unknownActiveMiddle);
+
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(activeRsvpToken(page)).toHaveText("が");
+  await expect(activeRsvpToken(page)).toHaveClass(/known/);
+  await expectVisibleRsvpTokensUseOnlyRsvpClasses(page);
+  await expectActiveStatusUnderlineIsOverlay(page);
+  await expectActiveTokenCentered(page);
+  await expectStatusStripStableRow(page);
+  await expectActiveTokenMiddleToMatch(page, unknownActiveMiddle);
+});
+
+test("keeps stopped hover context hidden while playback advances", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "play-hover.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await expectRsvpDisplayText(page, "猫");
+  await page.locator(".rsvp-token-display").hover();
+  await expectContextSentenceVisible(page);
+  await expectRsvpTokensHaveNoTransition(page);
+  const initialActiveMiddle = await activeTokenMiddle(page);
+
+  await page.keyboard.press("Space");
+  await expect(page.locator(".rsvp-token-display")).not.toHaveClass(
+    /rsvp-token-display--show-context/,
+  );
+  await expectContextSentenceHidden(page);
+  await expect
+    .poll(() => page.locator(".rsvp-token-display").getAttribute("data-rsvp-display-text"))
+    .not.toBe("猫");
+  await expect(page.locator(".rsvp-token-display")).not.toHaveClass(
+    /rsvp-token-display--show-context/,
+  );
+  await expectContextSentenceHidden(page);
+  await expectActiveTokenCentered(page);
+  await expectActiveTokenMiddleToMatch(page, initialActiveMiddle);
 });
 
 test("keeps Migaku ruby readings out of the visible RSVP layout", async ({ page }, testInfo) => {
@@ -273,7 +377,9 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
       "click",
       (event) => {
         const target = event.target as Element | null;
-        const token = target?.closest<HTMLElement>(".rsvp-token-display [data-mgk-term]");
+        const token = target?.closest<HTMLElement>(
+          ".rsvp-token-display .migaku-token[data-mgk-term]",
+        );
         if (token) {
           testWindow.__clickedTerms?.push(token.getAttribute("data-mgk-term") ?? "");
         }
@@ -314,6 +420,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await expect(page.locator(".migaku-pill")).toContainText("parsed");
   await expectRsvpDisplayText(page, "猫");
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "猫");
+  await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expectActiveTokenHitTarget(page);
   const initialParseEvents = await parseEventCount(page);
 
@@ -323,6 +430,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await page.getByRole("button", { name: "Next" }).click();
   await expectRsvpDisplayText(page, "が");
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "が");
+  await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expectActiveTokenHitTarget(page);
   await expect.poll(() => parseEventCount(page)).toBeGreaterThan(initialParseEvents);
 
@@ -333,18 +441,50 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await page.getByRole("button", { name: "Previous" }).click();
   await expectRsvpDisplayText(page, "猫");
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "猫");
+  await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expectActiveTokenHitTarget(page);
   await expect.poll(() => parseEventCount(page)).toBeGreaterThan(afterNextParseEvents);
 
   await page.getByRole("button", { name: "Play" }).click();
   await expectRsvpDisplayText(page, "走る");
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "走る");
+  await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
   await expect(page.locator(".status-strip")).toContainText("Paused on stop rule");
   await expectActiveTokenHitTarget(page);
 
   await activeRsvpToken(page).click();
   await expectClickedTerms(page, ["猫", "が", "走る"]);
+});
+
+test("wraps stopped hover sentence context without moving the active token", async ({
+  page,
+}, testInfo) => {
+  const longSentence =
+    "また、職安に行く予定もないので今日は図書館で日本語の本をゆっくり読んでいる。";
+  const epubPath = path.join(testInfo.outputDir, "hover-wrap.epub");
+  await createSmallEpub(epubPath, [longSentence]);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText(longSentence, {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.locator(".rsvp-token-display")).toHaveClass(/rsvp-token-display--stopped/);
+  await page.locator(".rsvp-token-display").hover();
+  await expectContextSentenceVisible(page);
+  await expectRsvpTokensHaveNoTransition(page);
+  await expectActiveTokenCentered(page);
+  await expectContextOverlayAroundActiveStep(page);
+  await expectStoppedHoverContextOverlayReady(page);
 });
 
 async function setRangeValue(locator: Locator, value: string) {
@@ -363,17 +503,6 @@ async function expectVisibleSentenceText(page: Page, text: string) {
         .evaluate((element) => (element as HTMLElement).innerText),
     )
     .toBe(text);
-}
-
-async function expectNoPseudoFallback(page: Page) {
-  await expect
-    .poll(() =>
-      page.locator(".rsvp-token-display").evaluate((element) => {
-        const content = getComputedStyle(element, "::after").content;
-        return content === "none" || content === '""';
-      }),
-    )
-    .toBe(true);
 }
 
 async function expectAllVisibleMigakuSentenceAttrs(page: Page, sentence: string) {
@@ -398,6 +527,149 @@ async function expectContextTokensHaveNoDecoration(page: Page) {
       ),
     )
     .toBe(true);
+}
+
+async function expectContextSentenceVisible(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display").evaluate((display) => {
+        const before = getComputedStyle(display, "::before");
+        const after = getComputedStyle(display, "::after");
+        const hasContent = before.content !== '""' || after.content !== '""';
+        return hasContent ? Math.max(Number(before.opacity), Number(after.opacity)) : 0;
+      }),
+    )
+    .toBeGreaterThan(0.3);
+}
+
+async function expectContextSentenceHidden(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display").evaluate((display) => {
+        const before = getComputedStyle(display, "::before");
+        const after = getComputedStyle(display, "::after");
+        return Math.max(Number(before.opacity), Number(after.opacity));
+      }),
+    )
+    .toBe(0);
+}
+
+async function expectStoppedHoverContextOverlayReady(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display").evaluate((display) => {
+        const before = getComputedStyle(display, "::before");
+        const after = getComputedStyle(display, "::after");
+
+        return {
+          bounded:
+            before.left === "0px" &&
+            before.right === "0px" &&
+            after.left === "0px" &&
+            after.right === "0px",
+          wraps: before.whiteSpace === "normal" && after.whiteSpace === "normal",
+        };
+      }),
+    )
+    .toEqual({ bounded: true, wraps: true });
+}
+
+async function expectContextOverlayAroundActiveStep(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display").evaluate((display) => {
+        const activeElements = Array.from(
+          display.querySelectorAll<HTMLElement>('[data-rsvp-visible-token="true"]'),
+        );
+        if (activeElements.length === 0) {
+          return false;
+        }
+
+        const before = getComputedStyle(display, "::before").content;
+        const after = getComputedStyle(display, "::after").content;
+        const beforeText = display.getAttribute("data-rsvp-context-before") ?? "";
+        const afterText = display.getAttribute("data-rsvp-context-after") ?? "";
+
+        return {
+          beforeVisible: beforeText.length > 0 && before !== '""',
+          afterVisible: afterText.length > 0 && after !== '""',
+        };
+      }),
+    )
+    .toEqual({ beforeVisible: true, afterVisible: true });
+}
+
+async function expectRsvpTokensHaveNoTransition(page: Page) {
+  await expect
+    .poll(() =>
+      page
+        .locator(".rsvp-token-display [data-rsvp-display-token-index]")
+        .evaluateAll((elements) =>
+          elements.every((element) =>
+            getComputedStyle(element).transitionDuration
+              .split(",")
+              .every((duration) => duration.trim() === "0s"),
+          ),
+        ),
+    )
+    .toBe(true);
+}
+
+async function expectVisibleRsvpTokensUseOnlyRsvpClasses(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display [data-rsvp-display-token-index]").evaluateAll((elements) =>
+        elements.every((element) =>
+          Array.from(element.classList).every(
+            (className) => className.startsWith("rsvp-") || className === "migaku-token",
+          ),
+        ),
+      ),
+    )
+    .toBe(true);
+}
+
+async function expectStatusStripStableRow(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".status-strip").evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          height: rect.height,
+          lineHeight: style.lineHeight,
+          overflow: style.overflow,
+        };
+      }),
+    )
+    .toEqual({ height: 20, lineHeight: "20px", overflow: "hidden" });
+}
+
+async function expectActiveStatusUnderlineIsOverlay(page: Page) {
+  await expect
+    .poll(() =>
+      activeRsvpToken(page).evaluateAll((elements) =>
+        elements.every((element) => {
+          const style = getComputedStyle(element);
+          const underline = getComputedStyle(element, "::after");
+          return style.textDecorationLine === "none" && Number(underline.opacity) > 0;
+        }),
+      ),
+    )
+    .toBe(true);
+}
+
+async function expectActiveTokenMiddleToMatch(page: Page, expectedMiddle: number) {
+  await expect.poll(() => activeTokenMiddle(page)).toBeCloseTo(expectedMiddle, 0);
+}
+
+async function activeTokenMiddle(page: Page) {
+  return activeRsvpToken(page).evaluateAll((elements) => {
+    const rects = elements.map((element) => element.getBoundingClientRect());
+    const top = Math.min(...rects.map((rect) => rect.top));
+    const bottom = Math.max(...rects.map((rect) => rect.bottom));
+    return top + (bottom - top) / 2;
+  });
 }
 
 async function expectActiveTokenHitTarget(page: Page) {
@@ -470,10 +742,21 @@ async function expectActiveTokenCentered(page: Page) {
         const activeRight = Math.max(
           ...activeElements.map((element) => element.getBoundingClientRect().right),
         );
+        const activeTop = Math.min(
+          ...activeElements.map((element) => element.getBoundingClientRect().top),
+        );
+        const activeBottom = Math.max(
+          ...activeElements.map((element) => element.getBoundingClientRect().bottom),
+        );
         const displayCenter = displayRect.left + displayRect.width / 2;
+        const displayMiddle = displayRect.top + displayRect.height / 2;
         const activeCenter = activeLeft + (activeRight - activeLeft) / 2;
+        const activeMiddle = activeTop + (activeBottom - activeTop) / 2;
 
-        return Math.abs(displayCenter - activeCenter);
+        return Math.max(
+          Math.abs(displayCenter - activeCenter),
+          Math.abs(displayMiddle - activeMiddle),
+        );
       }),
     )
     .toBeLessThanOrEqual(2);
