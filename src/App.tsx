@@ -70,8 +70,8 @@ export function App() {
   const sentences = useMemo(() => flattenSentences(selectedBook), [selectedBook]);
   const safePosition = useMemo(() => clampPosition(position, sentences), [position, sentences]);
   const progress = useMemo(
-    () => getProgressStats(safePosition, sentences),
-    [safePosition, sentences],
+    () => getProgressStats(safePosition, sentences, settings.chunkSize),
+    [safePosition, sentences, settings.chunkSize],
   );
   const currentSentence = sentences[safePosition.sentenceIndex];
   const displayTokens = useMemo(
@@ -161,13 +161,13 @@ export function App() {
         }
         return next;
       });
-    }, getTokenDelayMs(displayText, settings));
+    }, getTokenDelayMs(displayTokens, settings));
 
     return () => window.clearTimeout(timer);
   }, [
     activeKey,
     currentSentence,
-    displayText,
+    displayTokens,
     migaku.statuses,
     playing,
     sentences,
@@ -180,11 +180,11 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input, select, textarea, button")) {
+      if (target?.matches("input, select, textarea, [contenteditable='true']")) {
         return;
       }
 
-      if (event.code === "Space") {
+      if (event.code === "Space" && !target?.matches("button")) {
         event.preventDefault();
         togglePlayback();
       }

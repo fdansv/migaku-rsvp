@@ -6,8 +6,21 @@ const JAPANESE_CHAR =
 const SENTENCE_END = /[。！？!?]/u;
 const CLOSING_PUNCTUATION = /[」』”’）)］\]｝}〉》】]/u;
 const PUNCTUATION_ONLY = /^[\p{P}\p{S}\s]+$/u;
-export const CURRENT_TOKENIZER_VERSION = "tiny-segmenter-merge-v2";
+export const CURRENT_TOKENIZER_VERSION = "japanese-segmenter-merge-v3";
 const MERGE_PATTERNS = [
+  ["あり", "が", "たい"],
+  ["有り", "が", "たい"],
+  ["有", "り", "が", "たい"],
+  ["あり", "が", "たかっ", "た"],
+  ["有り", "が", "たかっ", "た"],
+  ["有", "り", "が", "たかっ", "た"],
+  ["あり", "が", "たく"],
+  ["有り", "が", "たく"],
+  ["有", "り", "が", "たく"],
+  ["あり", "が", "たさ"],
+  ["有り", "が", "たさ"],
+  ["有", "り", "が", "たさ"],
+  ["だ", "っ", "た"],
   ["だっ", "た"],
   ["だ", "った"],
   ["で", "し", "た"],
@@ -81,7 +94,10 @@ export function splitIntoSentences(text: string) {
 
 export async function tokenizeJapanese(text: string, sentenceId = "sentence"): Promise<RsvpToken[]> {
   const normalized = normalizeText(text);
-  return tokenizeWithTinySegmenter(normalized, sentenceId);
+  return (
+    tokenizeWithIntlSegmenter(normalized, sentenceId) ??
+    tokenizeWithTinySegmenter(normalized, sentenceId)
+  );
 }
 
 export function warmJapaneseTokenizer() {
@@ -112,12 +128,12 @@ function tokenizeWithTinySegmenter(text: string, sentenceId = "sentence") {
   return finalizeTokens(mergeTokenDrafts(drafts), sentenceId);
 }
 
-function tokenizeJapaneseFallback(text: string, sentenceId = "sentence"): RsvpToken[] {
+function tokenizeWithIntlSegmenter(text: string, sentenceId = "sentence"): RsvpToken[] | null {
   const normalized = normalizeText(text);
   const intlSegmenter = getSegmenter();
 
   if (!intlSegmenter) {
-    return fallbackTokenize(normalized, sentenceId);
+    return null;
   }
 
   const drafts = Array.from(intlSegmenter.segment(normalized))
@@ -137,24 +153,12 @@ function tokenizeJapaneseFallback(text: string, sentenceId = "sentence"): RsvpTo
   return finalizeTokens(mergeTokenDrafts(drafts), sentenceId);
 }
 
-function fallbackTokenize(text: string, sentenceId: string): RsvpToken[] {
-  let cursor = 0;
-  return Array.from(text)
-    .filter((char) => char.trim().length > 0)
-    .map((char, index) => {
-      const start = cursor;
-      cursor += char.length;
-
-      return {
-        id: `${sentenceId}:token:${index}`,
-        index,
-        text: char,
-        start,
-        end: cursor,
-        isWordLike: JAPANESE_CHAR.test(char),
-        isPunctuation: PUNCTUATION_ONLY.test(char),
-      };
-    });
+function tokenizeJapaneseFallback(text: string, sentenceId = "sentence"): RsvpToken[] {
+  const normalized = normalizeText(text);
+  return (
+    tokenizeWithIntlSegmenter(normalized, sentenceId) ??
+    tokenizeWithTinySegmenter(normalized, sentenceId)
+  );
 }
 
 function mergeTokenDrafts(tokens: TokenDraft[]) {

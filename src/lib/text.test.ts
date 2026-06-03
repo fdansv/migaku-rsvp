@@ -49,6 +49,15 @@ describe("Japanese text utilities", () => {
     ]);
   });
 
+  it("keeps ありがたい adjective forms together", async () => {
+    await expect(
+      tokenizeJapanese("本当にありがたい。", "s1").then((tokens) => tokens.map((token) => token.text)),
+    ).resolves.toEqual(["本当に", "ありがたい", "。"]);
+    await expect(
+      tokenizeJapanese("有りがたい。", "s2").then((tokens) => tokens.map((token) => token.text)),
+    ).resolves.toEqual(["有りがたい", "。"]);
+  });
+
   it("creates asynchronously tokenized sentences for imported EPUB text", async () => {
     const sentence = await createSentenceWithTokenizer("の職場だった。", "chapter:0", 0, 2, 7);
     expect(sentence?.tokens.map((token) => token.text)).toEqual(["の", "職場", "だった", "。"]);

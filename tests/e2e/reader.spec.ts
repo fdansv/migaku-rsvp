@@ -167,13 +167,11 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expectRsvpDisplayText(page, "猫");
   await expect(activeRsvpToken(page)).toHaveClass(/known/);
   await page.getByRole("button", { name: "Play" }).click();
-  await expectRsvpDisplayText(page, "走る");
+  await expectRsvpDisplayText(page, "走る。");
   await expect(activeRsvpToken(page)).toHaveText("走る");
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
   await expect(page.locator(".status-strip")).toContainText("Paused on stop rule");
 
-  await page.getByRole("button", { name: "Next" }).click();
-  await expectRsvpDisplayText(page, "。");
   await page.getByRole("button", { name: "Next" }).click();
   await expectRsvpDisplayText(page, "犬");
   await expect(activeRsvpToken(page)).toHaveText("犬");
@@ -201,6 +199,7 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
     timeout: 30_000,
   });
   await expectRsvpDisplayText(page, "猫");
+  await expectProgressCurrent(page, 1);
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -209,20 +208,47 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
 
   await page.keyboard.press("ArrowRight");
   await expectRsvpDisplayText(page, "が");
+  await expectProgressCurrent(page, 2);
 
   await page.keyboard.press("ArrowDown");
   await expectVisibleSentenceText(page, "犬も走る。");
   await expectRsvpDisplayText(page, "犬");
+  await expectProgressCurrent(page, 4);
+
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "も");
+  await expectProgressCurrent(page, 5);
 
   await page.keyboard.press("ArrowRight");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
+
+  await page.getByRole("button", { name: "Previous" }).click();
   await expectRsvpDisplayText(page, "も");
+  await expectProgressCurrent(page, 5);
 
   await page.keyboard.press("ArrowLeft");
   await expectRsvpDisplayText(page, "犬");
+  await expectProgressCurrent(page, 4);
+
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "も");
+  await expectProgressCurrent(page, 5);
+
+  await page.keyboard.press("ArrowDown");
+  await expectVisibleSentenceText(page, "鳥は空を見る。");
+  await expectRsvpDisplayText(page, "鳥");
+  await expectProgressCurrent(page, 7);
+
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
 
   await page.keyboard.press("ArrowUp");
   await expectVisibleSentenceText(page, "猫が走る。");
   await expectRsvpDisplayText(page, "猫");
+  await expectProgressCurrent(page, 1);
 });
 
 test("imports an EPUB dropped anywhere on the page", async ({ page }, testInfo) => {
@@ -494,7 +520,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await expect.poll(() => parseEventCount(page)).toBeGreaterThan(afterNextParseEvents);
 
   await page.getByRole("button", { name: "Play" }).click();
-  await expectRsvpDisplayText(page, "走る");
+  await expectRsvpDisplayText(page, "走る。");
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "走る");
   await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
@@ -541,6 +567,12 @@ async function setRangeValue(locator: Locator, value: string) {
 
 async function expectRsvpDisplayText(page: Page, text: string) {
   await expect(page.locator(".rsvp-token-display")).toHaveAttribute("data-rsvp-display-text", text);
+}
+
+async function expectProgressCurrent(page: Page, current: number) {
+  const total = await page.locator("progress").getAttribute("max");
+  await expect(page.locator("progress")).toHaveAttribute("value", String(current));
+  await expect(page.locator(".reader-progress > span")).toContainText(`${current}/${total}`);
 }
 
 async function expectVisibleSentenceText(page: Page, text: string) {
@@ -811,7 +843,7 @@ async function expectActiveTokenCentered(page: Page) {
 }
 
 function activeRsvpToken(page: Page) {
-  return page.locator('.rsvp-token-display [data-rsvp-visible-token="true"]');
+  return page.locator('.rsvp-token-display [data-rsvp-visible-word="true"]');
 }
 
 async function createEpubDataTransfer(page: Page, epubPath: string) {
@@ -848,11 +880,11 @@ test("uses Japanese tokenizer boundaries for inflected constructions", async ({ 
   await expect(activeRsvpToken(page)).toHaveText("職場");
   await expectActiveTokenCentered(page);
   await page.getByRole("button", { name: "Next" }).click();
-  await expectRsvpDisplayText(page, "だった");
+  await expectRsvpDisplayText(page, "だった。");
   await expect(activeRsvpToken(page)).toHaveText("だった");
   await expectActiveTokenCentered(page);
   await page.getByRole("button", { name: "Next" }).click();
-  await expectRsvpDisplayText(page, "。");
-  await expect(activeRsvpToken(page)).toHaveText("。");
+  await expectRsvpDisplayText(page, "だった。");
+  await expect(activeRsvpToken(page)).toHaveText("だった");
   await expectActiveTokenCentered(page);
 });

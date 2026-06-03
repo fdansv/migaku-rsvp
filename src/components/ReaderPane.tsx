@@ -276,6 +276,9 @@ export function ReaderPane({
                         .join(" ")}
                       data-rsvp-display-token-index={token.index}
                       data-rsvp-visible-token={isDisplayToken ? "true" : undefined}
+                      data-rsvp-visible-word={
+                        isDisplayToken && token.isWordLike ? "true" : undefined
+                      }
                       {...mirrorAttributes}
                       data-mgk-sentence={currentSentence.text}
                     >

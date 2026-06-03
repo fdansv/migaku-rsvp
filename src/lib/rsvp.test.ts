@@ -43,12 +43,17 @@ describe("RSVP reader logic", () => {
   it("advances and retreats across sentence boundaries", () => {
     const sentences = [sentence, nextSentence];
     const endOfSentence = { sentenceIndex: 0, tokenIndex: sentence.tokens.length - 1 };
+    const finalWordIndex =
+      [...sentence.tokens].reverse().find((token) => token.isWordLike)?.index ?? 0;
 
     expect(advancePosition(endOfSentence, sentences, 1)).toEqual({
       sentenceIndex: 1,
       tokenIndex: 0,
     });
-    expect(retreatPosition({ sentenceIndex: 1, tokenIndex: 0 }, sentences)).toEqual(endOfSentence);
+    expect(retreatPosition({ sentenceIndex: 1, tokenIndex: 0 }, sentences)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: finalWordIndex,
+    });
   });
 
   it("retreats by the same chunk size used for advancing", () => {
@@ -95,19 +100,22 @@ describe("RSVP reader logic", () => {
     });
   });
 
-  it("groups display tokens by chunk size", () => {
+  it("groups display tokens by word count and keeps punctuation attached", () => {
     expect(getDisplayText(sentence, 0, 2)).toBe(
       sentence.tokens
         .slice(0, 2)
         .map((token) => token.text)
         .join(""),
     );
-    expect(getDisplayTokens(sentence, sentence.tokens.length - 1, 4)).toHaveLength(1);
+    expect(getDisplayText(sentence, 2, 1)).toBe("走る。");
+    expect(getDisplayText(sentence, sentence.tokens.length - 1, 4)).toBe("走る。");
   });
 
   it("tracks progress by active token instead of sentence only", () => {
     const sentences = [sentence, nextSentence];
-    const total = sentence.tokens.length + nextSentence.tokens.length;
+    const sentenceWordCount = sentence.tokens.filter((token) => token.isWordLike).length;
+    const total =
+      sentenceWordCount + nextSentence.tokens.filter((token) => token.isWordLike).length;
 
     expect(getProgressStats({ sentenceIndex: 0, tokenIndex: 0 }, sentences)).toEqual({
       current: 1,
@@ -120,16 +128,24 @@ describe("RSVP reader logic", () => {
       percent: Math.round((2 / total) * 100),
     });
     expect(getProgressStats({ sentenceIndex: 1, tokenIndex: 0 }, sentences)).toEqual({
-      current: sentence.tokens.length + 1,
+      current: sentenceWordCount + 1,
       total,
-      percent: Math.round(((sentence.tokens.length + 1) / total) * 100),
+      percent: Math.round(((sentenceWordCount + 1) / total) * 100),
     });
   });
 
   it("adds extra delay after punctuation", () => {
-    const delay = getTokenDelayMs("。", DEFAULT_SETTINGS);
-    const base = getTokenDelayMs("猫", DEFAULT_SETTINGS);
+    const delay = getTokenDelayMs(getDisplayTokens(sentence, 2, 1), DEFAULT_SETTINGS);
+    const base = getTokenDelayMs(getDisplayTokens(sentence, 0, 1), DEFAULT_SETTINGS);
     expect(delay).toBeGreaterThan(base);
+  });
+
+  it("scales step delay by the number of visible words", () => {
+    const settings = { ...DEFAULT_SETTINGS, punctuationDelayMs: 0 };
+    const oneWordDelay = getTokenDelayMs(getDisplayTokens(sentence, 0, 1), settings);
+    const twoWordDelay = getTokenDelayMs(getDisplayTokens(sentence, 0, 2), settings);
+
+    expect(twoWordDelay).toBe(oneWordDelay * 2);
   });
 
   it("stops on unknown and i+1 tokens only when the active token qualifies", () => {
