@@ -13,6 +13,7 @@ import {
   flattenSentences,
   getDisplayText,
   getDisplayTokens,
+  getProgressStats,
   getTokenDelayMs,
   retreatPosition,
   shouldStopForTokenIndexes,
@@ -66,6 +67,10 @@ export function App() {
 
   const sentences = useMemo(() => flattenSentences(selectedBook), [selectedBook]);
   const safePosition = useMemo(() => clampPosition(position, sentences), [position, sentences]);
+  const progress = useMemo(
+    () => getProgressStats(safePosition, sentences),
+    [safePosition, sentences],
+  );
   const currentSentence = sentences[safePosition.sentenceIndex];
   const displayTokens = useMemo(
     () =>
@@ -286,8 +291,7 @@ export function App() {
           error={error}
           selectedBook={selectedBook}
           currentSentence={currentSentence}
-          sentences={sentences}
-          safePosition={safePosition}
+          progress={progress}
           displayText={displayText}
           displayTokenIndexes={displayTokenIndexes}
           displayTokenKey={displayTokenKey}

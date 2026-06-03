@@ -35,8 +35,14 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expectRsvpTokensHaveNoTransition(page);
   await expectActiveTokenCentered(page);
   const initialActiveMiddle = await activeTokenMiddle(page);
+  const progressLabel = page.locator(".reader-progress > span");
+  const progressMeter = page.locator("progress");
+  const initialProgressLabel = await progressLabel.innerText();
+  const initialProgressValue = await progressMeter.getAttribute("value");
 
   await page.getByRole("button", { name: "Next" }).click();
+  await expect.poll(() => progressLabel.innerText()).not.toBe(initialProgressLabel);
+  await expect.poll(() => progressMeter.getAttribute("value")).not.toBe(initialProgressValue);
   await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。");
   await expectVisibleSentenceText(page, "猫が走る。");
   await expectRsvpDisplayText(page, "が");

@@ -40,6 +40,25 @@ export function getDisplayText(sentence: Sentence, tokenIndex: number, chunkSize
     .join("");
 }
 
+export function getProgressStats(position: ReaderPosition, sentences: Sentence[]) {
+  const total = sentences.reduce((sum, sentence) => sum + sentence.tokens.length, 0);
+  if (total === 0) {
+    return { current: 0, total: 0, percent: 0 };
+  }
+
+  const current = clampPosition(position, sentences);
+  const completedBeforeCurrentSentence = sentences
+    .slice(0, current.sentenceIndex)
+    .reduce((sum, sentence) => sum + sentence.tokens.length, 0);
+  const currentToken = completedBeforeCurrentSentence + current.tokenIndex + 1;
+
+  return {
+    current: currentToken,
+    total,
+    percent: Math.round((currentToken / total) * 100),
+  };
+}
+
 export function advancePosition(
   position: ReaderPosition,
   sentences: Sentence[],

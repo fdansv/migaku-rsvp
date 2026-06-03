@@ -8,6 +8,7 @@ import {
   flattenSentences,
   getDisplayText,
   getDisplayTokens,
+  getProgressStats,
   getTokenDelayMs,
   retreatPosition,
   shouldStopForMode,
@@ -74,6 +75,27 @@ describe("RSVP reader logic", () => {
         .join(""),
     );
     expect(getDisplayTokens(sentence, sentence.tokens.length - 1, 4)).toHaveLength(1);
+  });
+
+  it("tracks progress by active token instead of sentence only", () => {
+    const sentences = [sentence, nextSentence];
+    const total = sentence.tokens.length + nextSentence.tokens.length;
+
+    expect(getProgressStats({ sentenceIndex: 0, tokenIndex: 0 }, sentences)).toEqual({
+      current: 1,
+      total,
+      percent: Math.round((1 / total) * 100),
+    });
+    expect(getProgressStats({ sentenceIndex: 0, tokenIndex: 1 }, sentences)).toEqual({
+      current: 2,
+      total,
+      percent: Math.round((2 / total) * 100),
+    });
+    expect(getProgressStats({ sentenceIndex: 1, tokenIndex: 0 }, sentences)).toEqual({
+      current: sentence.tokens.length + 1,
+      total,
+      percent: Math.round(((sentence.tokens.length + 1) / total) * 100),
+    });
   });
 
   it("adds extra delay after punctuation", () => {

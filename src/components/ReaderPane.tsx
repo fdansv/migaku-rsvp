@@ -11,7 +11,6 @@ import type {
   Book,
   MigakuScanResult,
   MigakuTokenStatus,
-  ReaderPosition,
   Sentence,
 } from "../types";
 import { MigakuSentenceSurface } from "./MigakuSentenceSurface";
@@ -20,8 +19,11 @@ interface ReaderPaneProps {
   error: string | null;
   selectedBook: Book | undefined;
   currentSentence: Sentence | undefined;
-  sentences: Sentence[];
-  safePosition: ReaderPosition;
+  progress: {
+    current: number;
+    total: number;
+    percent: number;
+  };
   displayText: string;
   displayTokenIndexes: number[];
   displayTokenKey: string;
@@ -47,8 +49,7 @@ export function ReaderPane({
   error,
   selectedBook,
   currentSentence,
-  sentences,
-  safePosition,
+  progress,
   displayText,
   displayTokenIndexes,
   displayTokenKey,
@@ -91,8 +92,6 @@ export function ReaderPane({
           .join("")
       : "";
   const showSentenceContext = !playing && sentenceContextHovered;
-  const progressPercent =
-    sentences.length > 0 ? Math.round((safePosition.sentenceIndex / sentences.length) * 100) : 0;
   const activeStatus = getActiveStatus(displayTokenIndexes, migaku.statuses);
 
   useLayoutEffect(() => {
@@ -172,7 +171,7 @@ export function ReaderPane({
             <span>{selectedBook?.title}</span>
             <div className="reader-progress">
               <span>
-                {progressPercent}% · {safePosition.sentenceIndex + 1}/{sentences.length}
+                {progress.percent}% · {progress.current}/{progress.total}
               </span>
               <button
                 className="recap-button"
@@ -327,7 +326,7 @@ export function ReaderPane({
             </button>
           </div>
 
-          <progress value={safePosition.sentenceIndex} max={Math.max(sentences.length - 1, 1)} />
+          <progress value={progress.current} max={Math.max(progress.total, 1)} />
         </>
       )}
     </main>
