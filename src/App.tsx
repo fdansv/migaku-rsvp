@@ -9,6 +9,7 @@ import { useFileDrop } from "./hooks/useFileDrop";
 import { useMigakuAdapter } from "./lib/migakuAdapter";
 import {
   advancePosition,
+  advanceSentencePosition,
   clampPosition,
   flattenSentences,
   getDisplayText,
@@ -16,6 +17,7 @@ import {
   getProgressStats,
   getTokenDelayMs,
   retreatPosition,
+  retreatSentencePosition,
   shouldStopForTokenIndexes,
 } from "./lib/rsvp";
 import { generateAiRecap, getRecapPages } from "./lib/recap";
@@ -194,6 +196,14 @@ export function App() {
         event.preventDefault();
         goPrevious();
       }
+      if (event.code === "ArrowDown") {
+        event.preventDefault();
+        goNextSentence();
+      }
+      if (event.code === "ArrowUp") {
+        event.preventDefault();
+        goPreviousSentence();
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -241,6 +251,18 @@ export function App() {
     setAutoPaused(false);
     setPlaying(false);
     setPosition((previous) => retreatPosition(previous, sentences, settings.chunkSize));
+  }
+
+  function goNextSentence() {
+    setAutoPaused(false);
+    setPlaying(false);
+    setPosition((previous) => advanceSentencePosition(previous, sentences));
+  }
+
+  function goPreviousSentence() {
+    setAutoPaused(false);
+    setPlaying(false);
+    setPosition((previous) => retreatSentencePosition(previous, sentences));
   }
 
   async function handleRecap() {

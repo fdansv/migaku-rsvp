@@ -183,6 +183,48 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).not.toHaveClass(/unknown/);
 });
 
+test("uses vertical arrows for sentence jumps and horizontal arrows for token steps", async ({
+  page,
+}, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "keyboard.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await expectRsvpDisplayText(page, "猫");
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+
+  await page.keyboard.press("ArrowRight");
+  await expectRsvpDisplayText(page, "が");
+
+  await page.keyboard.press("ArrowDown");
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "犬");
+
+  await page.keyboard.press("ArrowRight");
+  await expectRsvpDisplayText(page, "も");
+
+  await page.keyboard.press("ArrowLeft");
+  await expectRsvpDisplayText(page, "犬");
+
+  await page.keyboard.press("ArrowUp");
+  await expectVisibleSentenceText(page, "猫が走る。");
+  await expectRsvpDisplayText(page, "猫");
+});
+
 test("imports an EPUB dropped anywhere on the page", async ({ page }, testInfo) => {
   const epubPath = path.join(testInfo.outputDir, "dropped.epub");
   await createSmallEpub(epubPath);

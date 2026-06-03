@@ -113,6 +113,38 @@ export function retreatPosition(
   return current;
 }
 
+export function advanceSentencePosition(
+  position: ReaderPosition,
+  sentences: Sentence[],
+): ReaderPosition {
+  if (sentences.length === 0) {
+    return position;
+  }
+
+  const current = clampPosition(position, sentences);
+  if (current.sentenceIndex + 1 < sentences.length) {
+    return { sentenceIndex: current.sentenceIndex + 1, tokenIndex: 0 };
+  }
+
+  return current;
+}
+
+export function retreatSentencePosition(
+  position: ReaderPosition,
+  sentences: Sentence[],
+): ReaderPosition {
+  if (sentences.length === 0) {
+    return position;
+  }
+
+  const current = clampPosition(position, sentences);
+  if (current.sentenceIndex > 0) {
+    return { sentenceIndex: current.sentenceIndex - 1, tokenIndex: 0 };
+  }
+
+  return current;
+}
+
 export function getTokenDelayMs(displayText: string, settings: ReaderSettings) {
   const baseDelay = 60_000 / settings.wpm;
   const punctuationDelay = /[、。！？!?]$/u.test(displayText) ? settings.punctuationDelayMs : 0;

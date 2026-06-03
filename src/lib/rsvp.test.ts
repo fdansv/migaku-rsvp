@@ -4,6 +4,7 @@ import { createSentence } from "./text";
 import {
   DEFAULT_SETTINGS,
   advancePosition,
+  advanceSentencePosition,
   clampPosition,
   flattenSentences,
   getDisplayText,
@@ -11,6 +12,7 @@ import {
   getProgressStats,
   getTokenDelayMs,
   retreatPosition,
+  retreatSentencePosition,
   shouldStopForMode,
   shouldStopForTokenIndexes,
 } from "./rsvp";
@@ -64,6 +66,32 @@ describe("RSVP reader logic", () => {
     expect(retreatPosition({ sentenceIndex: 1, tokenIndex: 0 }, sentences, 2)).toEqual({
       sentenceIndex: 0,
       tokenIndex: Math.max(sentence.tokens.length - 2, 0),
+    });
+  });
+
+  it("jumps between sentence starts independently of chunk position", () => {
+    const sentences = [sentence, nextSentence];
+
+    expect(advanceSentencePosition({ sentenceIndex: 0, tokenIndex: 2 }, sentences)).toEqual({
+      sentenceIndex: 1,
+      tokenIndex: 0,
+    });
+    expect(retreatSentencePosition({ sentenceIndex: 1, tokenIndex: 2 }, sentences)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: 0,
+    });
+  });
+
+  it("keeps sentence jumps inside the book", () => {
+    const sentences = [sentence, nextSentence];
+
+    expect(retreatSentencePosition({ sentenceIndex: 0, tokenIndex: 2 }, sentences)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: 2,
+    });
+    expect(advanceSentencePosition({ sentenceIndex: 1, tokenIndex: 2 }, sentences)).toEqual({
+      sentenceIndex: 1,
+      tokenIndex: 2,
     });
   });
 
