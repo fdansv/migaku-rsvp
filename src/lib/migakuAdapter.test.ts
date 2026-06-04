@@ -48,6 +48,29 @@ describe("Migaku adapter", () => {
     expect(statusFromElement(element)).toBe("unparsed");
   });
 
+  it("treats unknown Migaku terms with existing card markers as tracked", () => {
+    const element = document.createElement("span");
+    element.className = "migaku-token unknown -mgk-has-card";
+    element.setAttribute("data-mgk-known-status", "UNKNOWN");
+
+    expect(statusFromElement(element)).toBe("tracked");
+  });
+
+  it("lets tracking markers override unknown classes", () => {
+    const root = document.createElement("div");
+    root.innerHTML = `
+      <span class="migaku-token unknown tracking" data-mgk-known-status="UNKNOWN">
+        <span class="migaku-surface">猫</span>
+      </span>
+    `;
+
+    const scan = scanMigakuSurface(root, sentence);
+    const catIndex = sentence.tokens.find((token) => token.text.includes("猫"))?.index ?? 0;
+
+    expect(scan.statuses[catIndex]).toBe("tracked");
+    expect(shouldStopForMode("unknown", scan.statuses, sentence, catIndex)).toBe(false);
+  });
+
   it("maps Migaku word elements back to sentence token indexes", () => {
     const root = document.createElement("div");
     root.innerHTML = `

@@ -14,6 +14,7 @@ import {
   flattenSentences,
   getDisplayText,
   getDisplayTokens,
+  getPositionForProgressUnit,
   getProgressStats,
   getTokenDelayMs,
   retreatPosition,
@@ -306,6 +307,17 @@ export function App() {
     setPosition((previous) => retreatSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
+  function beginProgressJump() {
+    setAutoPaused(false);
+    setPlaying(false);
+  }
+
+  function jumpToProgressLocation(location: number) {
+    setAutoPaused(false);
+    setPlaying(false);
+    setPosition(getPositionForProgressUnit(location, sentences, settings.chunkSize));
+  }
+
   async function handleRecap() {
     setAutoPaused(false);
     setPlaying(false);
@@ -372,6 +384,8 @@ export function App() {
           onPrevious={goPrevious}
           onNext={goNext}
           onTogglePlayback={togglePlayback}
+          onBeginProgressJump={beginProgressJump}
+          onProgressJump={jumpToProgressLocation}
           onRecap={handleRecap}
           onCloseRecap={() =>
             setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" })

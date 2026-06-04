@@ -270,23 +270,33 @@ export function statusFromElement(element: Element): MigakuTokenStatus {
 
 function explicitStatusFromElement(element: Element): MigakuTokenStatus | null {
   const classStatus = statusFromClassList(element);
-  if (classStatus) {
-    return classStatus;
+  const attributeStatus = statusFromStatusAttributes(element);
+  const status = classStatus ?? attributeStatus;
+
+  if (status === "unknown" && hasMigakuCardMarker(element)) {
+    return "tracked";
   }
 
-  for (const attribute of Array.from(element.attributes)) {
-    const name = attribute.name.toLowerCase();
-    if (!STATUS_ATTRIBUTE_NAMES.has(name)) {
-      continue;
-    }
-
-    const status = statusFromStatusText(attribute.value);
-    if (status) {
-      return status;
-    }
+  if (status) {
+    return status;
   }
 
-  return null;
+  return hasMigakuCardMarker(element) ? "tracked" : null;
+}
+
+function statusFromStatusAttributes(element: Element): MigakuTokenStatus | null {
+  return (
+    Array.from(element.attributes)
+      .map((attribute) => {
+        const name = attribute.name.toLowerCase();
+        if (!STATUS_ATTRIBUTE_NAMES.has(name)) {
+          return null;
+        }
+
+        return statusFromStatusText(attribute.value);
+      })
+      .find(Boolean) ?? null
+  );
 }
 
 function statusFromClassList(element: Element) {
@@ -314,6 +324,36 @@ function normalizeStatusClassName(className: string) {
 
 function statusFromStatusText(value: string): MigakuTokenStatus | null {
   return STATUS_CLASS_MAP[value.trim().toLowerCase()] ?? null;
+}
+
+function hasMigakuCardMarker(element: Element) {
+  const classNames = Array.from(element.classList).map((className) =>
+    normalizeStatusClassName(className).replace(/[-_]+/g, ""),
+  );
+  if (
+    classNames.some(
+      (className) =>
+        className === "tracked" ||
+        className === "tracking" ||
+        className === "learning" ||
+        className.includes("hascard") ||
+        className.includes("cardcreated") ||
+        className.includes("flashcard") ||
+        className.includes("wordcard"),
+    )
+  ) {
+    return true;
+  }
+
+  return Array.from(element.attributes).some((attribute) => {
+    const name = attribute.name.toLowerCase();
+    if (!name.includes("card") && !name.includes("track")) {
+      return false;
+    }
+
+    const value = attribute.value.trim().toLowerCase();
+    return value !== "" && value !== "false" && value !== "0" && value !== "none";
+  });
 }
 
 function scanVisibleDisplay(

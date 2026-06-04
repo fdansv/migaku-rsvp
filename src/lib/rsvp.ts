@@ -92,6 +92,45 @@ export function getProgressStats(
   };
 }
 
+export function getPositionForProgressUnit(
+  location: number,
+  sentences: Sentence[],
+  chunkSize = 1,
+): ReaderPosition {
+  const total = sentences.reduce((sum, sentence) => sum + getProgressUnitCount(sentence), 0);
+  if (total === 0) {
+    return { sentenceIndex: 0, tokenIndex: 0 };
+  }
+
+  let remainingLocation = Math.min(Math.max(Math.round(location), 1), total);
+  const normalizedChunkSize = Math.max(1, Math.round(chunkSize));
+
+  for (let sentenceIndex = 0; sentenceIndex < sentences.length; sentenceIndex += 1) {
+    const sentence = sentences[sentenceIndex];
+    const sentenceUnits = getProgressUnitCount(sentence);
+    if (remainingLocation > sentenceUnits) {
+      remainingLocation -= sentenceUnits;
+      continue;
+    }
+
+    return {
+      sentenceIndex,
+      tokenIndex: getTokenIndexForProgressUnit(sentence, remainingLocation, normalizedChunkSize),
+    };
+  }
+
+  const lastSentenceIndex = Math.max(sentences.length - 1, 0);
+  const lastSentence = sentences[lastSentenceIndex];
+  return {
+    sentenceIndex: lastSentenceIndex,
+    tokenIndex: getTokenIndexForProgressUnit(
+      lastSentence,
+      getProgressUnitCount(lastSentence),
+      normalizedChunkSize,
+    ),
+  };
+}
+
 export function advancePosition(
   position: ReaderPosition,
   sentences: Sentence[],
@@ -398,6 +437,10 @@ function getStepUnits(sentence: Sentence, tokenGroups: TokenGroups = []) {
   return [...normalizedGroups, ...singleTokenUnits].sort((left, right) => left[0] - right[0]);
 }
 
+function getWordLikeTokenIndexes(sentence: Sentence) {
+  return sentence.tokens.filter((token) => token.isWordLike).map((token) => token.index);
+}
+
 function getNormalizedTokenGroups(sentence: Sentence, tokenGroups: TokenGroups = []) {
   const wordLikeIndexes = new Set(
     sentence.tokens.filter((token) => token.isWordLike).map((token) => token.index),
@@ -487,4 +530,16 @@ function getProgressThroughToken(sentence: Sentence, tokenIndex: number, tokenGr
   }
 
   return Math.min(tokenIndex + 1, sentence.tokens.length);
+}
+
+function getTokenIndexForProgressUnit(sentence: Sentence, location: number, chunkSize: number) {
+  const wordIndexes = getWordLikeTokenIndexes(sentence);
+  if (wordIndexes.length > 0) {
+    const targetOffset = Math.min(Math.max(location - 1, 0), wordIndexes.length - 1);
+    const chunkStartOffset = Math.floor(targetOffset / chunkSize) * chunkSize;
+    return wordIndexes[chunkStartOffset];
+  }
+
+  const tokenOffset = Math.min(Math.max(location - 1, 0), Math.max(sentence.tokens.length - 1, 0));
+  return sentence.tokens[tokenOffset]?.index ?? 0;
 }

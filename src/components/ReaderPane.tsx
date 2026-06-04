@@ -1,10 +1,11 @@
-import { BookOpen, ChevronLeft, ChevronRight, Pause, Play, Sparkles, X } from "lucide-react";
+import { BookOpen, Check, ChevronLeft, ChevronRight, Pause, Play, Sparkles, X } from "lucide-react";
 import {
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type FormEvent,
   type RefObject,
 } from "react";
 import type {
@@ -43,6 +44,8 @@ interface ReaderPaneProps {
   onPrevious: () => void;
   onNext: () => void;
   onTogglePlayback: () => void;
+  onBeginProgressJump: () => void;
+  onProgressJump: (location: number) => void;
   onRecap: () => void;
   onCloseRecap: () => void;
 }
@@ -69,11 +72,17 @@ export function ReaderPane({
   onPrevious,
   onNext,
   onTogglePlayback,
+  onBeginProgressJump,
+  onProgressJump,
   onRecap,
   onCloseRecap,
 }: ReaderPaneProps) {
   const sentenceTrackRef = useRef<HTMLSpanElement>(null);
+  const progressInputRef = useRef<HTMLInputElement>(null);
   const [sentenceContextHovered, setSentenceContextHovered] = useState(false);
+  const [progressEditing, setProgressEditing] = useState(false);
+  const [progressInput, setProgressInput] = useState("");
+  const [progressInputInvalid, setProgressInputInvalid] = useState(false);
   const displayTokenIndexSet = useMemo(() => new Set(displayTokenIndexes), [displayTokenIndexes]);
   const displayStartTokenIndex =
     displayTokenIndexes.length > 0 ? Math.min(...displayTokenIndexes) : -1;
@@ -108,6 +117,15 @@ export function ReaderPane({
       setSentenceContextHovered(false);
     }
   }, [playing, sentenceContextHovered]);
+
+  useLayoutEffect(() => {
+    if (!progressEditing) {
+      return;
+    }
+
+    progressInputRef.current?.focus();
+    progressInputRef.current?.select();
+  }, [progressEditing]);
 
   useLayoutEffect(() => {
     const display = rsvpDisplayRef.current;
@@ -183,9 +201,63 @@ export function ReaderPane({
           <div className="reader-meta">
             <span>{selectedBook?.title}</span>
             <div className="reader-progress">
-              <span>
-                {progress.percent}% · {progress.current}/{progress.total}
-              </span>
+              {progressEditing ? (
+                <form
+                  className="progress-jump-form"
+                  noValidate
+                  onBlur={(event) => {
+                    const nextTarget = event.relatedTarget;
+                    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+                      return;
+                    }
+                    setProgressEditing(false);
+                    setProgressInputInvalid(false);
+                  }}
+                  onSubmit={submitProgressJump}
+                >
+                  <input
+                    ref={progressInputRef}
+                    className="progress-jump-input"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    aria-label="Location"
+                    aria-invalid={progressInputInvalid}
+                    value={progressInput}
+                    onChange={(event) => {
+                      setProgressInput(event.target.value);
+                      setProgressInputInvalid(false);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setProgressEditing(false);
+                        setProgressInputInvalid(false);
+                      }
+                    }}
+                  />
+                  <button
+                    className="progress-jump-submit"
+                    type="submit"
+                    aria-label="Go to location"
+                    title="Go to location"
+                  >
+                    <Check size={14} aria-hidden="true" />
+                  </button>
+                </form>
+              ) : (
+                <button
+                  key={`${progress.current}:${progress.total}:${progress.percent}`}
+                  className="progress-jump-button"
+                  type="button"
+                  aria-label={`Jump to location, current ${progress.current} of ${progress.total}`}
+                  title="Jump to location"
+                  onClick={beginProgressJump}
+                >
+                  <span className="reader-progress-value">
+                    {progress.percent}% · {progress.current}/{progress.total}
+                  </span>
+                </button>
+              )}
               <button
                 className="recap-button"
                 type="button"
@@ -352,6 +424,40 @@ export function ReaderPane({
       )}
     </main>
   );
+
+  function beginProgressJump() {
+    if (progress.total === 0) {
+      return;
+    }
+
+    onBeginProgressJump();
+    setProgressInput(String(progress.current));
+    setProgressInputInvalid(false);
+    setProgressEditing(true);
+  }
+
+  function submitProgressJump(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const location = parseProgressLocation(progressInput, progress.total);
+    if (location === null) {
+      setProgressInputInvalid(true);
+      progressInputRef.current?.focus();
+      return;
+    }
+
+    onProgressJump(location);
+    setProgressEditing(false);
+    setProgressInputInvalid(false);
+  }
+}
+
+function parseProgressLocation(input: string, total: number) {
+  const trimmed = input.trim();
+  if (trimmed === "" || total <= 0 || !/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  return Math.min(Math.max(Number.parseInt(trimmed, 10), 1), total);
 }
 
 function getActiveStatus(

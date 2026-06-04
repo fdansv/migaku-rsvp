@@ -35,7 +35,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expectRsvpTokensHaveNoTransition(page);
   await expectActiveTokenCentered(page);
   const initialActiveMiddle = await activeTokenMiddle(page);
-  const progressLabel = page.locator(".reader-progress > span");
+  const progressLabel = page.locator(".reader-progress-value");
   const progressMeter = page.locator("progress");
   const initialProgressLabel = await progressLabel.innerText();
   const initialProgressValue = await progressMeter.getAttribute("value");
@@ -55,6 +55,22 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expectRsvpDisplayText(page, "猫");
   await expect(activeRsvpToken(page)).toHaveText("猫");
   await expectActiveTokenCentered(page);
+
+  await page.getByRole("button", { name: /Jump to location/ }).click();
+  const locationInput = page.getByRole("textbox", { name: "Location" });
+  await expect(locationInput).toHaveValue("1");
+  await locationInput.fill("4");
+  await locationInput.press("Enter");
+  await expectRsvpDisplayText(page, "犬");
+  await expect(activeRsvpToken(page)).toHaveText("犬");
+  await expectProgressCurrent(page, 4);
+
+  await page.getByRole("button", { name: /Jump to location/ }).click();
+  await page.getByRole("textbox", { name: "Location" }).fill("1");
+  await page.getByRole("textbox", { name: "Location" }).press("Enter");
+  await expectRsvpDisplayText(page, "猫");
+  await expect(activeRsvpToken(page)).toHaveText("猫");
+  await expectProgressCurrent(page, 1);
 
   await expect(page.getByRole("button", { name: "Recap" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toHaveAttribute(
@@ -298,6 +314,47 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await expectVisibleSentenceText(page, "猫が走る。");
   await expectRsvpDisplayText(page, "猫");
   await expectProgressCurrent(page, 1);
+});
+
+test("keeps Migaku-wrapped progress indicator synced while navigating and playing", async ({
+  page,
+}, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "wrapped-progress.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await expectProgressCurrent(page, 1);
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+
+  await wrapProgressWithMigakuMarkup(page);
+  await page.keyboard.press("ArrowRight");
+  await expectRsvpDisplayText(page, "が");
+  await expectProgressCurrent(page, 2);
+  await expect(page.locator(".reader-progress-value .migaku-token")).toHaveCount(0);
+
+  await wrapProgressWithMigakuMarkup(page);
+  const previousProgress = await page.locator("progress").getAttribute("value");
+  await page.getByRole("button", { name: "Play" }).click();
+  await expect.poll(() => page.locator("progress").getAttribute("value")).not.toBe(previousProgress);
+  const currentProgress = await page.locator("progress").getAttribute("value");
+  const totalProgress = await page.locator("progress").getAttribute("max");
+  await expect(page.locator(".reader-progress-value")).toContainText(
+    `${currentProgress}/${totalProgress}`,
+  );
 });
 
 test("imports an EPUB dropped anywhere on the page", async ({ page }, testInfo) => {
@@ -621,7 +678,29 @@ async function expectRsvpDisplayText(page: Page, text: string) {
 async function expectProgressCurrent(page: Page, current: number) {
   const total = await page.locator("progress").getAttribute("max");
   await expect(page.locator("progress")).toHaveAttribute("value", String(current));
-  await expect(page.locator(".reader-progress > span")).toContainText(`${current}/${total}`);
+  await expect(page.locator(".reader-progress-value")).toContainText(`${current}/${total}`);
+}
+
+async function wrapProgressWithMigakuMarkup(page: Page) {
+  const progressValue = page.locator(".reader-progress-value");
+  const text = await progressValue.innerText();
+
+  await progressValue.evaluate((element, currentText) => {
+    element.innerHTML = `
+      <span class="migaku-token -mgk-blacklisted -mgk-no-readings">
+        <span class="migaku-fragment -mgk-content">
+          <span class="migaku-surface"></span>
+          <span class="migaku-spacer" aria-hidden="true">\u200b</span>
+        </span>
+      </span>
+    `;
+    const surface = element.querySelector(".migaku-surface");
+    if (surface) {
+      surface.textContent = currentText;
+    }
+  }, text);
+
+  await expect(progressValue.locator(".migaku-surface")).toHaveText(text);
 }
 
 async function expectVisibleSentenceText(page: Page, text: string) {

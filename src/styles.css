@@ -255,7 +255,8 @@ button {
   font-size: 0.88rem;
 }
 
-.reader-meta span {
+.reader-meta > span,
+.reader-progress-value {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -267,6 +268,74 @@ button {
   justify-content: flex-end;
   gap: 10px;
   white-space: nowrap;
+}
+
+.progress-jump-button {
+  max-width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-jump-button:hover,
+.progress-jump-button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  outline: none;
+}
+
+.progress-jump-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.progress-jump-input {
+  width: clamp(8ch, 12vw, 14ch);
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.progress-jump-input:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  outline-offset: 1px;
+}
+
+.progress-jump-input[aria-invalid="true"] {
+  border-color: var(--danger);
+  outline-color: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+.progress-jump-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.progress-jump-submit:hover,
+.progress-jump-submit:focus-visible {
+  border-color: var(--accent);
+  outline: none;
 }
 
 .reader-stage {

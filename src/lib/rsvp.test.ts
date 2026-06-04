@@ -9,6 +9,7 @@ import {
   flattenSentences,
   getDisplayText,
   getDisplayTokens,
+  getPositionForProgressUnit,
   getProgressStats,
   getTokenDelayMs,
   retreatPosition,
@@ -131,6 +132,37 @@ describe("RSVP reader logic", () => {
       current: sentenceWordCount + 1,
       total,
       percent: Math.round(((sentenceWordCount + 1) / total) * 100),
+    });
+  });
+
+  it("maps progress locations back to reader positions", () => {
+    const sentences = [sentence, nextSentence];
+    const sentenceWordCount = sentence.tokens.filter((token) => token.isWordLike).length;
+
+    expect(getPositionForProgressUnit(0, sentences)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: 0,
+    });
+    expect(getPositionForProgressUnit(sentenceWordCount + 1, sentences)).toEqual({
+      sentenceIndex: 1,
+      tokenIndex: 0,
+    });
+    expect(getPositionForProgressUnit(999, sentences)).toEqual({
+      sentenceIndex: 1,
+      tokenIndex: [...nextSentence.tokens].reverse().find((token) => token.isWordLike)?.index ?? 0,
+    });
+  });
+
+  it("maps progress locations to the visible chunk containing them", () => {
+    const runIndex = sentence.tokens.find((token) => token.text.includes("走る"))?.index ?? 0;
+
+    expect(getPositionForProgressUnit(2, [sentence], 2)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: 0,
+    });
+    expect(getPositionForProgressUnit(3, [sentence], 2)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: runIndex,
     });
   });
 
