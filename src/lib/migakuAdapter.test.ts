@@ -191,6 +191,7 @@ describe("Migaku adapter", () => {
 
     expect(scan.statuses[catIndex]).toBe("unknown");
     expect(scan.statuses[particleIndex]).toBe("unknown");
+    expect(scan.tokenGroups).toContainEqual([catIndex, particleIndex]);
     expect(shouldStopForMode("unknown", scan.statuses, sentence, particleIndex)).toBe(true);
   });
 

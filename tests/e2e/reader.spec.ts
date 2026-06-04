@@ -181,6 +181,55 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).not.toHaveClass(/unknown/);
 });
 
+test("uses Migaku token boundaries when Migaku spans multiple fallback tokens", async ({
+  page,
+}, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "migaku-boundaries.epub");
+  await createSmallEpub(epubPath, ["猫が走る。"]);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {
+    surface.innerHTML = `
+      <span class="migaku-token unknown" data-mgk-term="猫が" data-mgk-known-status="UNKNOWN" data-mgk-sentence="猫が">
+        <span class="migaku-surface">猫が</span>
+      </span>
+      <span class="migaku-token known" data-mgk-term="走る" data-mgk-known-status="KNOWN" data-mgk-sentence="走る">
+        <span class="migaku-surface">走る</span>
+      </span>
+      <span>。</span>
+    `;
+  });
+
+  await expect(page.locator(".migaku-pill")).toContainText("parsed");
+  await expectRsvpDisplayText(page, "猫が");
+  await expect(activeRsvpToken(page)).toHaveCount(1);
+  await expect(activeRsvpToken(page)).toHaveText("猫が");
+  await expect(activeRsvpToken(page)).toHaveAttribute("data-rsvp-display-token-index", "0,1");
+  await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
+  await expectActiveTokenCentered(page);
+
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "走る。");
+  await expect(activeRsvpToken(page)).toHaveText("走る");
+  await expect(activeRsvpToken(page)).toHaveClass(/known/);
+  await expectActiveTokenCentered(page);
+
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "猫が");
+  await expect(activeRsvpToken(page)).toHaveText("猫が");
+  await expectActiveTokenCentered(page);
+});
+
 test("uses vertical arrows for sentence jumps and horizontal arrows for token steps", async ({
   page,
 }, testInfo) => {

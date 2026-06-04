@@ -7,6 +7,7 @@ const EMPTY_SCAN: MigakuScanResult = {
   timedOut: false,
   statuses: {},
   mirrors: {},
+  tokenGroups: [],
   assignedTokenCount: 0,
 };
 
@@ -161,6 +162,7 @@ export function scanMigakuSurface(root: HTMLElement, sentence: Sentence): Migaku
     Boolean(root.querySelector("[class*='migaku'], [data-migaku], [data-status]"));
   const statuses: Record<number, MigakuTokenStatus> = {};
   const mirrors: MigakuScanResult["mirrors"] = {};
+  const tokenGroups: number[][] = [];
   let cursor = 0;
   let assignedTokenCount = 0;
 
@@ -186,6 +188,7 @@ export function scanMigakuSurface(root: HTMLElement, sentence: Sentence): Migaku
     }
 
     const status = statusFromElement(element);
+    tokenGroups.push(tokens.map((token) => token.index));
     if (status !== "unparsed") {
       for (const token of tokens) {
         const nextStatus = mergeTokenStatus(statuses[token.index], status);
@@ -213,6 +216,7 @@ export function scanMigakuSurface(root: HTMLElement, sentence: Sentence): Migaku
     sentenceId: sentence.id,
     statuses,
     mirrors,
+    tokenGroups,
     assignedTokenCount,
   };
 }
@@ -330,12 +334,11 @@ function scanVisibleDisplay(
   for (const element of Array.from(
     visibleRoot.querySelectorAll<HTMLElement>("[data-rsvp-display-token-index]"),
   )) {
-    const tokenIndex = Number(element.getAttribute("data-rsvp-display-token-index"));
-    if (!Number.isInteger(tokenIndex)) {
-      continue;
-    }
-
-    if (statuses[tokenIndex]) {
+    const tokenIndexes = splitTokenIndexes(element.getAttribute("data-rsvp-display-token-index"))
+      .map((tokenIndex) => Number(tokenIndex))
+      .filter((tokenIndex) => Number.isInteger(tokenIndex));
+    const unassignedTokenIndexes = tokenIndexes.filter((tokenIndex) => !statuses[tokenIndex]);
+    if (unassignedTokenIndexes.length === 0) {
       continue;
     }
 
@@ -346,13 +349,15 @@ function scanVisibleDisplay(
     }
 
     detected = true;
-    assignedTokenCount += 1;
-    const nextStatus = mergeTokenStatus(statuses[tokenIndex], status);
-    statuses[tokenIndex] = nextStatus;
-    mirrors[tokenIndex] = chooseTokenMirror(
-      mirrors[tokenIndex],
-      mirrorFromElement(candidate, nextStatus),
-    );
+    assignedTokenCount += unassignedTokenIndexes.length;
+    for (const tokenIndex of unassignedTokenIndexes) {
+      const nextStatus = mergeTokenStatus(statuses[tokenIndex], status);
+      statuses[tokenIndex] = nextStatus;
+      mirrors[tokenIndex] = chooseTokenMirror(
+        mirrors[tokenIndex],
+        mirrorFromElement(candidate, nextStatus),
+      );
+    }
   }
 
   return {
@@ -505,7 +510,9 @@ export function syncVisibleSentenceContext(
 
   const activeIndexSet = new Set(activeTokenIndexes.map(String));
   const activeTokens = tokenRoots.filter((element) =>
-    activeIndexSet.has(element.getAttribute("data-rsvp-display-token-index") ?? ""),
+    splitTokenIndexes(element.getAttribute("data-rsvp-display-token-index")).some((tokenIndex) =>
+      activeIndexSet.has(tokenIndex),
+    ),
   );
 
   for (const token of activeTokens) {

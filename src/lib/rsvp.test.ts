@@ -148,6 +148,47 @@ describe("RSVP reader logic", () => {
     expect(twoWordDelay).toBe(oneWordDelay * 2);
   });
 
+  it("uses Migaku token groups as display and navigation boundaries", () => {
+    const catIndex = sentence.tokens.find((token) => token.text.includes("猫"))?.index ?? 0;
+    const particleIndex = sentence.tokens.find((token) => token.text.includes("が"))?.index ?? 1;
+    const runIndex = sentence.tokens.find((token) => token.text.includes("走る"))?.index ?? 2;
+    const tokenGroups = [[catIndex, particleIndex], [runIndex]];
+    const sentences = [sentence];
+
+    expect(getDisplayTokens(sentence, catIndex, 1, tokenGroups).map((token) => token.index)).toEqual([
+      catIndex,
+      particleIndex,
+    ]);
+    expect(getDisplayText(sentence, particleIndex, 1, tokenGroups)).toBe("猫が");
+    expect(advancePosition({ sentenceIndex: 0, tokenIndex: catIndex }, sentences, 1, {
+      [sentence.id]: tokenGroups,
+    })).toEqual({ sentenceIndex: 0, tokenIndex: runIndex });
+    expect(retreatPosition({ sentenceIndex: 0, tokenIndex: runIndex }, sentences, 1, {
+      [sentence.id]: tokenGroups,
+    })).toEqual({ sentenceIndex: 0, tokenIndex: catIndex });
+  });
+
+  it("counts a grouped Migaku token as one delay and i+1 unit", () => {
+    const settings = { ...DEFAULT_SETTINGS, punctuationDelayMs: 0 };
+    const catIndex = sentence.tokens.find((token) => token.text.includes("猫"))?.index ?? 0;
+    const particleIndex = sentence.tokens.find((token) => token.text.includes("が"))?.index ?? 1;
+    const tokenGroups = [[catIndex, particleIndex]];
+    const displayTokens = getDisplayTokens(sentence, catIndex, 1, tokenGroups);
+    const fallbackDelay = getTokenDelayMs(displayTokens, settings);
+    const groupedDelay = getTokenDelayMs(displayTokens, settings, tokenGroups);
+
+    expect(groupedDelay).toBe(fallbackDelay / 2);
+    expect(
+      shouldStopForTokenIndexes(
+        "i+1",
+        { [catIndex]: "unknown", [particleIndex]: "unknown" },
+        sentence,
+        [catIndex, particleIndex],
+        tokenGroups,
+      ),
+    ).toBe(true);
+  });
+
   it("stops on unknown and i+1 tokens only when the active token qualifies", () => {
     const catIndex = sentence.tokens.find((token) => token.text.includes("猫"))?.index ?? 0;
     const statuses = { [catIndex]: "unknown" as const };

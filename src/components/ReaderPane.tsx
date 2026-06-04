@@ -10,9 +10,11 @@ import {
 import type {
   Book,
   MigakuScanResult,
+  MigakuTokenMirror,
   MigakuTokenStatus,
   Sentence,
 } from "../types";
+import { getTokenRenderGroups } from "../lib/rsvp";
 import { MigakuSentenceSurface } from "./MigakuSentenceSurface";
 
 interface ReaderPaneProps {
@@ -93,6 +95,13 @@ export function ReaderPane({
       : "";
   const showSentenceContext = !playing && sentenceContextHovered;
   const activeStatus = getActiveStatus(displayTokenIndexes, migaku.statuses);
+  const tokenRenderGroups = useMemo(
+    () =>
+      currentSentence
+        ? getTokenRenderGroups(currentSentence, migaku.parsed ? migaku.tokenGroups : [])
+        : [],
+    [currentSentence, migaku.parsed, migaku.tokenGroups],
+  );
 
   useLayoutEffect(() => {
     if (playing && sentenceContextHovered) {
@@ -112,11 +121,14 @@ export function ReaderPane({
         return;
       }
 
-      const activeElements = displayTokenIndexes
-        .map((tokenIndex) =>
-          track.querySelector<HTMLElement>(`[data-rsvp-display-token-index="${tokenIndex}"]`),
-        )
-        .filter((element): element is HTMLElement => Boolean(element));
+      const activeIndexSet = new Set(displayTokenIndexes.map(String));
+      const activeElements = Array.from(
+        track.querySelectorAll<HTMLElement>("[data-rsvp-display-token-index]"),
+      ).filter((element) =>
+        splitTokenIndexes(element.getAttribute("data-rsvp-display-token-index")).some(
+          (tokenIndex) => activeIndexSet.has(tokenIndex),
+        ),
+      );
 
       if (activeElements.length === 0) {
         track.style.setProperty("--rsvp-track-offset", "0px");
@@ -150,6 +162,7 @@ export function ReaderPane({
     displayTokenKey,
     fontSize,
     migaku.assignedTokenCount,
+    migaku.tokenGroups,
     rsvpDisplayRef,
   ]);
 
@@ -253,15 +266,20 @@ export function ReaderPane({
                 className="rsvp-sentence-track"
                 data-mgk-sentence={currentSentence.text}
               >
-                {currentSentence.tokens.map((token) => {
-                  const mirror = migaku.mirrors[token.index];
+                {tokenRenderGroups.map((tokens) => {
+                  const tokenIndexes = tokens.map((token) => token.index);
+                  const tokenIndexValue = tokenIndexes.join(",");
+                  const tokenStatus = getActiveStatus(tokenIndexes, migaku.statuses);
+                  const mirror = getGroupMirror(tokenIndexes, migaku.mirrors, tokenStatus);
                   const mirrorAttributes = mirror ? reactDataAttributes(mirror.attributes) : {};
-                  const isDisplayToken = displayTokenIndexSet.has(token.index);
-                  const tokenStatus = migaku.statuses[token.index];
+                  const isDisplayToken = tokenIndexes.some((tokenIndex) =>
+                    displayTokenIndexSet.has(tokenIndex),
+                  );
+                  const isWordLike = tokens.some((token) => token.isWordLike);
 
                   return (
                     <span
-                      key={token.id}
+                      key={tokens.map((token) => token.id).join(",")}
                       className={[
                         "rsvp-display-token",
                         isDisplayToken
@@ -274,15 +292,15 @@ export function ReaderPane({
                       ]
                         .filter(Boolean)
                         .join(" ")}
-                      data-rsvp-display-token-index={token.index}
+                      data-rsvp-display-token-index={tokenIndexValue}
                       data-rsvp-visible-token={isDisplayToken ? "true" : undefined}
                       data-rsvp-visible-word={
-                        isDisplayToken && token.isWordLike ? "true" : undefined
+                        isDisplayToken && isWordLike ? "true" : undefined
                       }
                       {...mirrorAttributes}
                       data-mgk-sentence={currentSentence.text}
                     >
-                      {token.text}
+                      {tokens.map((token) => token.text).join("")}
                     </span>
                   );
                 })}
@@ -355,4 +373,20 @@ function reactDataAttributes(attributes: Record<string, string>) {
       ([name]) => (name.startsWith("data-") || name === "lang") && name !== "data-mgk-sentence",
     ),
   );
+}
+
+function getGroupMirror(
+  tokenIndexes: number[],
+  mirrors: MigakuScanResult["mirrors"],
+  status: MigakuTokenStatus,
+): MigakuTokenMirror | undefined {
+  const groupMirrors = tokenIndexes
+    .map((tokenIndex) => mirrors[tokenIndex])
+    .filter((mirror): mirror is MigakuTokenMirror => Boolean(mirror));
+
+  return groupMirrors.find((mirror) => mirror.status === status) ?? groupMirrors[0];
+}
+
+function splitTokenIndexes(value: string | null) {
+  return value?.split(",").filter(Boolean) ?? [];
 }

@@ -69,26 +69,18 @@ export function App() {
 
   const sentences = useMemo(() => flattenSentences(selectedBook), [selectedBook]);
   const safePosition = useMemo(() => clampPosition(position, sentences), [position, sentences]);
-  const progress = useMemo(
-    () => getProgressStats(safePosition, sentences, settings.chunkSize),
-    [safePosition, sentences, settings.chunkSize],
-  );
   const currentSentence = sentences[safePosition.sentenceIndex];
-  const displayTokens = useMemo(
+  const fallbackDisplayTokens = useMemo(
     () =>
       currentSentence
         ? getDisplayTokens(currentSentence, safePosition.tokenIndex, settings.chunkSize)
         : [],
     [currentSentence, safePosition.tokenIndex, settings.chunkSize],
   );
-  const displayTokenIndexes = useMemo(
-    () => displayTokens.map((token) => token.index),
-    [displayTokens],
+  const fallbackDisplayTokenIndexes = useMemo(
+    () => fallbackDisplayTokens.map((token) => token.index),
+    [fallbackDisplayTokens],
   );
-  const displayTokenKey = displayTokenIndexes.join(",");
-  const displayText = currentSentence
-    ? getDisplayText(currentSentence, safePosition.tokenIndex, settings.chunkSize)
-    : "";
   const bufferWindow = useMemo(
     () => getMigakuBufferWindow(selectedBook?.id, sentences, safePosition.sentenceIndex),
     [safePosition.sentenceIndex, selectedBook?.id, sentences],
@@ -97,9 +89,46 @@ export function App() {
     migakuRootRef,
     rsvpDisplayRef,
     currentSentence,
-    displayTokenIndexes,
+    fallbackDisplayTokenIndexes,
     bufferWindow.key,
   );
+  const migakuTokenGroups = useMemo(
+    () => (migaku.parsed ? migaku.tokenGroups : []),
+    [migaku.parsed, migaku.tokenGroups],
+  );
+  const tokenGroupsBySentenceId = useMemo(
+    () => (currentSentence ? { [currentSentence.id]: migakuTokenGroups } : {}),
+    [currentSentence, migakuTokenGroups],
+  );
+  const progress = useMemo(
+    () => getProgressStats(safePosition, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+    [safePosition, sentences, settings.chunkSize, tokenGroupsBySentenceId],
+  );
+  const displayTokens = useMemo(
+    () =>
+      currentSentence
+        ? getDisplayTokens(
+            currentSentence,
+            safePosition.tokenIndex,
+            settings.chunkSize,
+            migakuTokenGroups,
+          )
+        : [],
+    [currentSentence, safePosition.tokenIndex, settings.chunkSize, migakuTokenGroups],
+  );
+  const displayTokenIndexes = useMemo(
+    () => displayTokens.map((token) => token.index),
+    [displayTokens],
+  );
+  const displayTokenKey = displayTokenIndexes.join(",");
+  const displayText = currentSentence
+    ? getDisplayText(
+        currentSentence,
+        safePosition.tokenIndex,
+        settings.chunkSize,
+        migakuTokenGroups,
+      )
+    : "";
   const activeKey = currentSentence ? `${currentSentence.id}:${safePosition.tokenIndex}` : "";
   const shouldStop =
     Boolean(currentSentence) &&
@@ -108,6 +137,7 @@ export function App() {
       migaku.statuses,
       currentSentence,
       displayTokenIndexes,
+      migakuTokenGroups,
     );
   const { isFileDragActive, dragHandlers } = useFileDrop({
     disabled: isImporting,
@@ -152,7 +182,12 @@ export function App() {
 
     const timer = window.setTimeout(() => {
       setPosition((previous) => {
-        const next = advancePosition(previous, sentences, settings.chunkSize);
+        const next = advancePosition(
+          previous,
+          sentences,
+          settings.chunkSize,
+          tokenGroupsBySentenceId,
+        );
         if (
           next.sentenceIndex === previous.sentenceIndex &&
           next.tokenIndex === previous.tokenIndex
@@ -161,13 +196,14 @@ export function App() {
         }
         return next;
       });
-    }, getTokenDelayMs(displayTokens, settings));
+    }, getTokenDelayMs(displayTokens, settings, migakuTokenGroups));
 
     return () => window.clearTimeout(timer);
   }, [
     activeKey,
     currentSentence,
     displayTokens,
+    migakuTokenGroups,
     migaku.statuses,
     playing,
     sentences,
@@ -175,6 +211,7 @@ export function App() {
     shouldStop,
     skipStopKey,
     setPosition,
+    tokenGroupsBySentenceId,
   ]);
 
   useEffect(() => {
@@ -244,25 +281,29 @@ export function App() {
   function goNext() {
     setAutoPaused(false);
     setPlaying(false);
-    setPosition((previous) => advancePosition(previous, sentences, settings.chunkSize));
+    setPosition((previous) =>
+      advancePosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+    );
   }
 
   function goPrevious() {
     setAutoPaused(false);
     setPlaying(false);
-    setPosition((previous) => retreatPosition(previous, sentences, settings.chunkSize));
+    setPosition((previous) =>
+      retreatPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+    );
   }
 
   function goNextSentence() {
     setAutoPaused(false);
     setPlaying(false);
-    setPosition((previous) => advanceSentencePosition(previous, sentences));
+    setPosition((previous) => advanceSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
   function goPreviousSentence() {
     setAutoPaused(false);
     setPlaying(false);
-    setPosition((previous) => retreatSentencePosition(previous, sentences));
+    setPosition((previous) => retreatSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
   async function handleRecap() {

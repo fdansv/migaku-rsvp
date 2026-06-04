@@ -73,6 +73,7 @@ export interface MigakuScanResult {
   sentenceId?: string;
   statuses: Record<number, MigakuTokenStatus>;
   mirrors: Record<number, MigakuTokenMirror>;
+  tokenGroups: number[][];
   assignedTokenCount: number;
 }
 
