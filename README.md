@@ -23,6 +23,8 @@ EPUB_LIBRARY_PATH=/path/to/epubs npm run serve:library
 
 Open `http://localhost:4173`. EPUB files under `EPUB_LIBRARY_PATH` are listed in the
 library and progress for those server books is saved in `.migaku-rsvp-progress.json`.
+When this server library is enabled, EPUB files imported or dropped in the browser are uploaded
+into `EPUB_LIBRARY_PATH` instead of being saved only to that browser's IndexedDB.
 
 Optional environment variables:
 

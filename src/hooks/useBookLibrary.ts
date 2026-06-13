@@ -6,6 +6,7 @@ import {
   loadServerBookFile,
   loadServerBookProgress,
   saveServerBookProgress,
+  uploadServerBook,
   type ServerBookEntry,
 } from "../lib/serverLibrary";
 import { deleteBook, loadBooks, saveBook } from "../lib/storage";
@@ -20,6 +21,7 @@ export function useBookLibrary() {
   const [position, setPosition] = useState<ReaderPosition>(EMPTY_POSITION);
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serverLibraryEnabled, setServerLibraryEnabled] = useState(false);
   const selectedBookIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -75,10 +77,10 @@ export function useBookLibrary() {
               : "Could not load the server EPUB library.",
           );
         }
-        return [];
+        return { enabled: false, books: [] };
       }),
     ])
-      .then(async ([storedBooks, serverBooks]) => {
+      .then(async ([storedBooks, serverLibrary]) => {
         const upgradedBooks = await Promise.all(
           storedBooks.map((book) => upgradeBookTokenization({ ...book, source: "local" })),
         );
@@ -86,6 +88,8 @@ export function useBookLibrary() {
           return;
         }
 
+        setServerLibraryEnabled(serverLibrary.enabled);
+        const serverBooks = serverLibrary.books;
         const nextBooks = [...serverBooks, ...upgradedBooks];
         setBooks(nextBooks);
         if (nextBooks[0]) {
@@ -114,6 +118,26 @@ export function useBookLibrary() {
     setError(null);
     setIsImporting(true);
     try {
+      if (serverLibraryEnabled) {
+        const entry = await uploadServerBook(file);
+        const parsedBook = await parseEpub(file, entry.fileName);
+        const serverBook: Book = {
+          ...parsedBook,
+          id: entry.id,
+          source: "server",
+          fileName: entry.fileName,
+          createdAt: entry.modifiedAt,
+          progress: entry.progress,
+        };
+        setBooks((currentBooks) => [
+          serverBook,
+          ...currentBooks.filter((candidate) => candidate.id !== serverBook.id),
+        ]);
+        setSelectedBookId(serverBook.id);
+        setPosition(serverBook.progress);
+        return;
+      }
+
       const book = await parseEpub(file);
       const localBook: Book = { ...book, source: "local" };
       await saveBook(localBook);
@@ -128,7 +152,7 @@ export function useBookLibrary() {
     } finally {
       setIsImporting(false);
     }
-  }, []);
+  }, [serverLibraryEnabled]);
 
   const selectBook = useCallback((book: Book) => {
     setSelectedBookId(book.id);
@@ -207,11 +231,11 @@ export function useBookLibrary() {
 
 async function loadServerBooks() {
   if (!(await isServerLibraryEnabled())) {
-    return [];
+    return { enabled: false, books: [] };
   }
 
   const entries = await loadServerBookEntries();
-  return entries.map(createServerBookPlaceholder);
+  return { enabled: true, books: entries.map(createServerBookPlaceholder) };
 }
 
 function createServerBookPlaceholder(entry: ServerBookEntry): Book {

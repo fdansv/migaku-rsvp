@@ -51,6 +51,23 @@ export async function loadServerBookFile(bookId: string) {
   return response.blob();
 }
 
+export async function uploadServerBook(file: File) {
+  const response = await fetch(`${API_BASE}/books`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": file.type || "application/epub+zip",
+      "X-File-Name": encodeURIComponent(file.name),
+    },
+    body: file,
+  });
+  if (!response.ok) {
+    throw new Error(await getResponseError(response, "Could not upload this EPUB."));
+  }
+
+  return (await response.json()) as ServerBookEntry;
+}
+
 export async function loadServerBookProgress(bookId: string) {
   const response = await fetch(`${API_BASE}/books/${encodeURIComponent(bookId)}/progress`, {
     headers: { Accept: "application/json" },
@@ -74,5 +91,14 @@ export async function saveServerBookProgress(bookId: string, progress: ReaderPos
   });
   if (!response.ok) {
     throw new Error("Could not save server reading progress.");
+  }
+}
+
+async function getResponseError(response: Response, fallback: string) {
+  try {
+    const body = (await response.json()) as { error?: string };
+    return body.error ?? fallback;
+  } catch {
+    return fallback;
   }
 }

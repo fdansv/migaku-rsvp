@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { access, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT ?? 4173);
@@ -15,6 +17,7 @@ const PROGRESS_PATH = path.resolve(
 );
 const DIST_DIR = path.resolve(fileURLToPath(new URL("../dist", import.meta.url)));
 const MAX_JSON_BODY_BYTES = 16 * 1024;
+const MAX_EPUB_UPLOAD_BYTES = Number(process.env.MAX_EPUB_UPLOAD_BYTES ?? 500 * 1024 * 1024);
 
 const MIME_TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -72,18 +75,28 @@ async function routeApiRequest(request, response, url) {
   if (request.method === "GET" && url.pathname === "/api/books") {
     const books = await listLibraryBooks();
     const progressByBookId = await readProgressStore();
-    sendJson(
-      response,
-      200,
-      books.map((book) => ({
-        id: book.id,
-        fileName: book.fileName,
-        relativePath: book.relativePath,
-        modifiedAt: book.modifiedAt,
-        size: book.size,
-        progress: progressByBookId[book.id] ?? emptyProgress(),
-      })),
-    );
+    sendJson(response, 200, books.map((book) => toBookEntry(book, progressByBookId)));
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/books") {
+    const fileName = request.headers["x-file-name"];
+    if (typeof fileName !== "string") {
+      sendJson(response, 400, { error: "Missing X-File-Name header." });
+      return;
+    }
+
+    try {
+      const book = await saveUploadedEpub(request, fileName);
+      const progressByBookId = await readProgressStore();
+      sendJson(response, 201, toBookEntry(book, progressByBookId));
+    } catch (error) {
+      if (error instanceof UploadError) {
+        sendJson(response, error.statusCode, { error: error.message });
+        return;
+      }
+      throw error;
+    }
     return;
   }
 
@@ -98,7 +111,7 @@ async function routeApiRequest(request, response, url) {
     response.writeHead(200, {
       "Content-Type": "application/epub+zip",
       "Content-Length": book.size,
-      "Content-Disposition": `inline; filename="${book.fileName.replaceAll('"', '\\"')}"`,
+      "Content-Disposition": createContentDisposition(book.fileName),
       "Cache-Control": "no-store",
     });
     createReadStream(book.absolutePath).pipe(response);
@@ -179,10 +192,57 @@ async function listLibraryBooks() {
     return [];
   }
 
-  await access(EPUB_LIBRARY_PATH);
+  await mkdir(EPUB_LIBRARY_PATH, { recursive: true });
   const books = [];
   await collectEpubFiles(EPUB_LIBRARY_PATH, "", books);
   return books.sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
+
+async function saveUploadedEpub(request, fileName) {
+  if (!EPUB_LIBRARY_PATH) {
+    throw new UploadError("Server EPUB library is disabled.", 404);
+  }
+
+  const safeFileName = sanitizeEpubFileName(fileName);
+  await mkdir(EPUB_LIBRARY_PATH, { recursive: true });
+
+  const destinationPath = path.resolve(EPUB_LIBRARY_PATH, safeFileName);
+  if (!isPathInside(destinationPath, EPUB_LIBRARY_PATH)) {
+    throw new UploadError("Invalid EPUB filename.", 400);
+  }
+
+  const tempPath = path.join(EPUB_LIBRARY_PATH, `.${safeFileName}.${process.pid}.upload`);
+  let bytesWritten = 0;
+  const byteLimit = new Transform({
+    transform(chunk, _encoding, callback) {
+      bytesWritten += chunk.length;
+      if (bytesWritten > MAX_EPUB_UPLOAD_BYTES) {
+        callback(new UploadError("EPUB upload is too large.", 413));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+
+  try {
+    await pipeline(request, byteLimit, createWriteStream(tempPath, { flags: "w" }));
+    if (bytesWritten === 0) {
+      throw new UploadError("Uploaded EPUB is empty.", 400);
+    }
+    await rename(tempPath, destinationPath);
+    const fileStats = await stat(destinationPath);
+    return {
+      id: createBookId(safeFileName),
+      absolutePath: destinationPath,
+      relativePath: safeFileName,
+      fileName: safeFileName,
+      modifiedAt: fileStats.mtime.toISOString(),
+      size: fileStats.size,
+    };
+  } catch (error) {
+    await unlink(tempPath).catch(() => {});
+    throw error;
+  }
 }
 
 async function collectEpubFiles(directory, relativeDirectory, books) {
@@ -247,6 +307,17 @@ function createBookId(relativePath) {
   return `server-${createHash("sha256").update(normalizedPath).digest("hex").slice(0, 24)}`;
 }
 
+function toBookEntry(book, progressByBookId) {
+  return {
+    id: book.id,
+    fileName: book.fileName,
+    relativePath: book.relativePath,
+    modifiedAt: book.modifiedAt,
+    size: book.size,
+    progress: progressByBookId[book.id] ?? emptyProgress(),
+  };
+}
+
 function emptyProgress() {
   return { sentenceIndex: 0, tokenIndex: 0 };
 }
@@ -275,6 +346,42 @@ function sendJson(response, statusCode, payload) {
 function isPathInside(candidatePath, directoryPath) {
   const relativePath = path.relative(directoryPath, candidatePath);
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+function sanitizeEpubFileName(fileName) {
+  let decodedFileName;
+  try {
+    decodedFileName = decodeURIComponent(fileName);
+  } catch {
+    throw new UploadError("Invalid EPUB filename.", 400);
+  }
+
+  const baseName = path
+    .basename(decodedFileName)
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
+  if (!baseName.toLowerCase().endsWith(".epub")) {
+    throw new UploadError("Only .epub uploads are supported.", 400);
+  }
+
+  const normalizedName = baseName.length > 0 ? baseName : "book.epub";
+  if (normalizedName === ".epub") {
+    throw new UploadError("Invalid EPUB filename.", 400);
+  }
+
+  return normalizedName;
+}
+
+function createContentDisposition(fileName) {
+  const fallbackName = fileName.replace(/[^\x20-\x7e]/g, "_").replaceAll('"', '\\"');
+  return `inline; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+}
+
+class UploadError extends Error {
+  constructor(message, statusCode) {
+    super(message);
+    this.statusCode = statusCode;
+  }
 }
 
 function readJsonBody(request) {
