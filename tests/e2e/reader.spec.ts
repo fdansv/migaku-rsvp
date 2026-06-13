@@ -106,6 +106,17 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
+  await page.getByRole("button", { name: "Never" }).click();
+  await expect(page.getByRole("button", { name: "Never" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Unknown" }).click();
+  await expect(page.getByRole("button", { name: "Unknown" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByRole("button", { name: "Dark" }).click();
+  await expect(page.locator(".app")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Paper" }).click();
+  await expect(page.locator(".app")).toHaveAttribute("data-theme", "paper");
 
   await page.reload();
   await page.getByRole("button", { name: "Settings" }).click();

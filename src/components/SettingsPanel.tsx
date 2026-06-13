@@ -5,7 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import type { ReaderSettings } from "../types";
+import type { ReaderSettings, StopMode, ThemeMode } from "../types";
 
 interface SettingsPanelProps {
   settings: ReaderSettings;
@@ -23,6 +23,18 @@ interface RangeSettingProps {
   format: (value: number) => string;
   onValue: (value: number) => void;
 }
+
+const STOP_MODE_OPTIONS: Array<{ value: StopMode; label: string }> = [
+  { value: "unknown", label: "Unknown" },
+  { value: "never", label: "Never" },
+  { value: "i+1", label: "i+1" },
+];
+
+const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
+  { value: "paper", label: "Paper" },
+  { value: "dark", label: "Dark" },
+  { value: "contrast", label: "Contrast" },
+];
 
 export function SettingsPanel({ settings, isOpen, onToggle, onChange }: SettingsPanelProps) {
   return (
@@ -67,32 +79,18 @@ export function SettingsPanel({ settings, isOpen, onToggle, onChange }: Settings
             format={(value) => String(value)}
             onValue={(value) => onChange({ chunkSize: value })}
           />
-          <label>
-            Pause
-            <select
-              value={settings.stopMode}
-              onChange={(event) =>
-                onChange({ stopMode: event.currentTarget.value as ReaderSettings["stopMode"] })
-              }
-            >
-              <option value="unknown">Unknown</option>
-              <option value="never">Never</option>
-              <option value="i+1">i+1</option>
-            </select>
-          </label>
-          <label>
-            Theme
-            <select
-              value={settings.theme}
-              onChange={(event) =>
-                onChange({ theme: event.currentTarget.value as ReaderSettings["theme"] })
-              }
-            >
-              <option value="paper">Paper</option>
-              <option value="dark">Dark</option>
-              <option value="contrast">Contrast</option>
-            </select>
-          </label>
+          <OptionGroup
+            label="Pause"
+            options={STOP_MODE_OPTIONS}
+            value={settings.stopMode}
+            onValue={(value) => onChange({ stopMode: value })}
+          />
+          <OptionGroup
+            label="Theme"
+            options={THEME_OPTIONS}
+            value={settings.theme}
+            onValue={(value) => onChange({ theme: value })}
+          />
           <label>
             AI URL
             <input
@@ -131,6 +129,37 @@ export function SettingsPanel({ settings, isOpen, onToggle, onChange }: Settings
 
 function formatStepDuration(value: number) {
   return `${(value / 1000).toFixed(2)}s`;
+}
+
+function OptionGroup<T extends string>({
+  label,
+  options,
+  value,
+  onValue,
+}: {
+  label: string;
+  options: Array<{ value: T; label: string }>;
+  value: T;
+  onValue: (value: T) => void;
+}) {
+  return (
+    <fieldset className="setting-group">
+      <legend>{label}</legend>
+      <div className="setting-options" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            className={option.value === value ? "is-selected" : undefined}
+            type="button"
+            aria-pressed={option.value === value}
+            onClick={() => onValue(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
 }
 
 function RangeSetting({ label, min, max, step, value, format, onValue }: RangeSettingProps) {

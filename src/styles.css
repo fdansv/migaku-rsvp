@@ -804,7 +804,8 @@ progress::-webkit-progress-value {
   min-width: 0;
 }
 
-.settings label {
+.settings label,
+.setting-group {
   display: grid;
   gap: 8px;
   color: var(--muted);
@@ -812,13 +813,23 @@ progress::-webkit-progress-value {
   font-weight: 700;
 }
 
+.setting-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.setting-group legend {
+  padding: 0;
+}
+
 .settings input[type="range"] {
   width: 100%;
   accent-color: var(--accent);
 }
 
-.settings input:not([type="range"]),
-.settings select {
+.settings input:not([type="range"]) {
   width: 100%;
   min-height: 36px;
   padding: 0 9px;
@@ -826,6 +837,41 @@ progress::-webkit-progress-value {
   border-radius: 8px;
   background: var(--panel);
   color: var(--text);
+}
+
+.setting-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+
+.setting-options button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.setting-options button.is-selected {
+  background: var(--accent);
+  color: var(--panel);
+}
+
+.setting-options button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 2px;
 }
 
 .setting-value {
