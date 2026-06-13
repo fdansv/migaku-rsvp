@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type FormEvent,
   type RefObject,
 } from "react";
 import type {
@@ -205,15 +204,10 @@ export function ReaderPane({
                 <form
                   className="progress-jump-form"
                   noValidate
-                  onBlur={(event) => {
-                    const nextTarget = event.relatedTarget;
-                    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
-                      return;
-                    }
-                    setProgressEditing(false);
-                    setProgressInputInvalid(false);
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    submitProgressJump();
                   }}
-                  onSubmit={submitProgressJump}
                 >
                   <input
                     ref={progressInputRef}
@@ -233,13 +227,18 @@ export function ReaderPane({
                         setProgressEditing(false);
                         setProgressInputInvalid(false);
                       }
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        submitProgressJump();
+                      }
                     }}
                   />
                   <button
                     className="progress-jump-submit"
-                    type="submit"
+                    type="button"
                     aria-label="Go to location"
                     title="Go to location"
+                    onClick={submitProgressJump}
                   >
                     <Check size={14} aria-hidden="true" />
                   </button>
@@ -436,8 +435,7 @@ export function ReaderPane({
     setProgressEditing(true);
   }
 
-  function submitProgressJump(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function submitProgressJump() {
     const location = parseProgressLocation(progressInput, progress.total);
     if (location === null) {
       setProgressInputInvalid(true);

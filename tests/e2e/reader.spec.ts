@@ -72,6 +72,22 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveText("猫");
   await expectProgressCurrent(page, 1);
 
+  await page.getByRole("button", { name: /Jump to location/ }).click();
+  await page.getByRole("textbox", { name: "Location" }).fill("4");
+  await page.getByRole("button", { name: "Go to location" }).click();
+  await expectRsvpDisplayText(page, "犬");
+  await expect(activeRsvpToken(page)).toHaveText("犬");
+  await expectProgressCurrent(page, 4);
+
+  await page.getByRole("button", { name: /Jump to location/ }).click();
+  await page.getByRole("textbox", { name: "Location" }).fill("1");
+  await page.getByRole("textbox", { name: "Location" }).blur();
+  await expect(page.getByRole("textbox", { name: "Location" })).toBeVisible();
+  await page.getByRole("button", { name: "Go to location" }).click();
+  await expectRsvpDisplayText(page, "猫");
+  await expect(activeRsvpToken(page)).toHaveText("猫");
+  await expectProgressCurrent(page, 1);
+
   await expect(page.getByRole("button", { name: "Recap" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toHaveAttribute(
     "aria-expanded",
