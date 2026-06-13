@@ -132,6 +132,7 @@ export function ReaderPane({
     if (!display || !track || displayTokenIndexes.length === 0) {
       return;
     }
+    const displayElement = display;
 
     function alignTrack() {
       if (!track) {
@@ -149,6 +150,7 @@ export function ReaderPane({
 
       if (activeElements.length === 0) {
         track.style.setProperty("--rsvp-track-offset", "0px");
+        track.style.setProperty("--rsvp-track-scale", "1");
         return;
       }
 
@@ -159,7 +161,11 @@ export function ReaderPane({
       const activeCenter = activeLeft + (activeRight - activeLeft) / 2;
       const trackCenter = track.scrollWidth / 2;
       const offset = trackCenter - activeCenter;
+      const activeWidth = activeRight - activeLeft;
+      const availableWidth = displayElement.clientWidth * 0.96;
+      const scale = activeWidth > 0 ? Math.min(1, availableWidth / activeWidth) : 1;
       track.style.setProperty("--rsvp-track-offset", `${Math.round(offset)}px`);
+      track.style.setProperty("--rsvp-track-scale", String(Number(scale.toFixed(4))));
     }
 
     alignTrack();

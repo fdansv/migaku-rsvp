@@ -730,6 +730,49 @@ test("wraps stopped hover sentence context without moving the active token", asy
   await expectStoppedHoverContextOverlayReady(page);
 });
 
+test("scales long active text to stay inside the mobile viewport", async ({ page }, testInfo) => {
+  const longSentence = "力ない男に張り付いたまま薄暗い部屋の奥まで歩いていった。";
+  const epubPath = path.join(testInfo.outputDir, "mobile-long-active.epub");
+  await createSmallEpub(epubPath, [longSentence]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ fontSize: 96, chunkSize: 1 }));
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText(longSentence, {
+    timeout: 30_000,
+  });
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate(
+    (surface, sentence) => {
+      surface.innerHTML = `
+        <span class="migaku-token unknown" data-mgk-term="${sentence}" data-mgk-known-status="UNKNOWN" data-mgk-sentence="${sentence}">
+          <span class="migaku-surface">${sentence}</span>
+        </span>
+      `;
+    },
+    longSentence,
+  );
+
+  await expect(page.locator(".migaku-pill")).toContainText("parsed");
+  await expectRsvpDisplayText(page, longSentence);
+  await expectActiveTokenCentered(page);
+  await expectVisibleRsvpTokensInsideDisplay(page);
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-sentence-track").evaluate((track) => {
+        const scale = getComputedStyle(track).getPropertyValue("--rsvp-track-scale");
+        return Number(scale);
+      }),
+    )
+    .toBeLessThan(1);
+});
+
 async function setRangeValue(locator: Locator, value: string) {
   await locator.fill(value);
 }
@@ -1048,6 +1091,31 @@ async function expectActiveTokenCentered(page: Page) {
       }),
     )
     .toBeLessThanOrEqual(2);
+}
+
+async function expectVisibleRsvpTokensInsideDisplay(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display").evaluate((display) => {
+        const visibleTokens = Array.from(
+          display.querySelectorAll<HTMLElement>('[data-rsvp-visible-token="true"]'),
+        );
+        if (visibleTokens.length === 0) {
+          return false;
+        }
+
+        const displayRect = display.getBoundingClientRect();
+        const activeLeft = Math.min(
+          ...visibleTokens.map((element) => element.getBoundingClientRect().left),
+        );
+        const activeRight = Math.max(
+          ...visibleTokens.map((element) => element.getBoundingClientRect().right),
+        );
+
+        return activeLeft >= displayRect.left - 1 && activeRight <= displayRect.right + 1;
+      }),
+    )
+    .toBe(true);
 }
 
 function activeRsvpToken(page: Page) {
