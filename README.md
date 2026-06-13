@@ -11,6 +11,25 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 Open `http://127.0.0.1:5173`, import an EPUB, and enable Migaku for that local site.
 
+## Home Server EPUB Library
+
+The app still works as a static GitHub Pages build by default. To run it with a shared EPUB
+folder and cross-device reading progress, build the app and start the optional Node server:
+
+```bash
+npm run build
+EPUB_LIBRARY_PATH=/path/to/epubs npm run serve:library
+```
+
+Open `http://localhost:4173`. EPUB files under `EPUB_LIBRARY_PATH` are listed in the
+library and progress for those server books is saved in `.migaku-rsvp-progress.json`.
+
+Optional environment variables:
+
+- `PORT`: server port, defaults to `4173`.
+- `HOST`: bind host, defaults to `0.0.0.0`.
+- `MIGAKU_RSVP_PROGRESS_PATH`: custom JSON progress file path.
+
 ## Migaku Behavior
 
 - Default pause mode stops on Migaku-marked unknown words.

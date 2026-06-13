@@ -28,6 +28,13 @@ import type { Book, ReaderSettings, Sentence } from "./types";
 const BUFFER_SENTENCES_BEHIND = 20;
 const BUFFER_SENTENCES_AHEAD = 100;
 const BUFFER_WINDOW_SIZE = 40;
+const TRANSPORT_KEY_CODES = new Set([
+  "Space",
+  "ArrowRight",
+  "ArrowLeft",
+  "ArrowDown",
+  "ArrowUp",
+]);
 
 type RecapStatus = "idle" | "loading" | "success" | "error";
 
@@ -63,6 +70,7 @@ export function App() {
   });
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
+  const playbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     saveSettings(settings);
@@ -172,16 +180,21 @@ export function App() {
 
   useEffect(() => {
     if (!playing || !currentSentence) {
+      clearPlaybackTimer();
       return;
     }
 
     if (shouldStop && skipStopKey !== activeKey) {
+      clearPlaybackTimer();
       setPlaying(false);
       setAutoPaused(true);
       return;
     }
 
     const timer = window.setTimeout(() => {
+      if (playbackTimerRef.current === timer) {
+        playbackTimerRef.current = null;
+      }
       setPosition((previous) => {
         const next = advancePosition(
           previous,
@@ -198,8 +211,14 @@ export function App() {
         return next;
       });
     }, getTokenDelayMs(displayTokens, settings, migakuTokenGroups));
+    playbackTimerRef.current = timer;
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (playbackTimerRef.current === timer) {
+        playbackTimerRef.current = null;
+      }
+    };
   }, [
     activeKey,
     currentSentence,
@@ -219,6 +238,11 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, select, textarea, [contenteditable='true']")) {
+        return;
+      }
+
+      if (event.repeat && TRANSPORT_KEY_CODES.has(event.code)) {
+        event.preventDefault();
         return;
       }
 
@@ -249,17 +273,17 @@ export function App() {
   });
 
   function handleImportFile(file: File) {
-    setPlaying(false);
+    stopPlayback();
     void importBook(file);
   }
 
   function handleSelectBook(book: Book) {
-    setPlaying(false);
+    stopPlayback();
     selectBook(book);
   }
 
   function handleRemoveBook(bookId: string) {
-    setPlaying(false);
+    stopPlayback();
     void removeBook(bookId);
   }
 
@@ -275,13 +299,16 @@ export function App() {
     if (!playing && autoPaused && shouldStop) {
       setSkipStopKey(activeKey);
     }
+    if (playing) {
+      clearPlaybackTimer();
+    }
     setAutoPaused(false);
     setPlaying((previous) => !previous);
   }
 
   function goNext() {
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
     setPosition((previous) =>
       advancePosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
     );
@@ -289,7 +316,7 @@ export function App() {
 
   function goPrevious() {
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
     setPosition((previous) =>
       retreatPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
     );
@@ -297,30 +324,30 @@ export function App() {
 
   function goNextSentence() {
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
     setPosition((previous) => advanceSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
   function goPreviousSentence() {
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
     setPosition((previous) => retreatSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
   function beginProgressJump() {
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
   }
 
   function jumpToProgressLocation(location: number) {
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
     setPosition(getPositionForProgressUnit(location, sentences, settings.chunkSize));
   }
 
   async function handleRecap() {
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
 
     const pages = getRecapPages(selectedBook, currentSentence);
     const sourceLabel =
@@ -343,6 +370,20 @@ export function App() {
         sourceLabel,
       });
     }
+  }
+
+  function stopPlayback() {
+    clearPlaybackTimer();
+    setPlaying(false);
+  }
+
+  function clearPlaybackTimer() {
+    if (playbackTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(playbackTimerRef.current);
+    playbackTimerRef.current = null;
   }
 
   return (

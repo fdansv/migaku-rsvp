@@ -234,6 +234,18 @@ button {
   color: var(--danger);
 }
 
+.book-source {
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 44px;
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
 .reader {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto auto;

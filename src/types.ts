@@ -49,6 +49,7 @@ export interface Book {
   author?: string;
   fileName: string;
   createdAt: string;
+  source?: "local" | "server";
   tokenizerVersion?: string;
   chapters: Chapter[];
   progress: ReaderPosition;

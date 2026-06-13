@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseEpub } from "../lib/epub";
+import {
+  isServerLibraryEnabled,
+  loadServerBookEntries,
+  loadServerBookFile,
+  loadServerBookProgress,
+  saveServerBookProgress,
+  type ServerBookEntry,
+} from "../lib/serverLibrary";
 import { deleteBook, loadBooks, saveBook } from "../lib/storage";
 import { CURRENT_TOKENIZER_VERSION, tokenizeJapanese, warmJapaneseTokenizer } from "../lib/text";
 import type { Book, ReaderPosition } from "../types";
@@ -12,21 +20,80 @@ export function useBookLibrary() {
   const [position, setPosition] = useState<ReaderPosition>(EMPTY_POSITION);
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedBookIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    selectedBookIdRef.current = selectedBookId;
+  }, [selectedBookId]);
+
+  const hydrateServerBook = useCallback(async (book: Book) => {
+    if (book.source !== "server") {
+      return;
+    }
+
+    setError(null);
+    setIsImporting(true);
+    try {
+      const [file, progress] = await Promise.all([
+        loadServerBookFile(book.id),
+        loadServerBookProgress(book.id).catch(() => book.progress),
+      ]);
+      const parsedBook = await parseEpub(file, book.fileName);
+      const serverBook: Book = {
+        ...parsedBook,
+        id: book.id,
+        source: "server",
+        fileName: book.fileName,
+        createdAt: book.createdAt,
+        progress,
+      };
+
+      setBooks((currentBooks) =>
+        currentBooks.map((candidate) => (candidate.id === book.id ? serverBook : candidate)),
+      );
+
+      if (selectedBookIdRef.current === book.id) {
+        setPosition(progress);
+      }
+    } catch (serverError) {
+      setError(serverError instanceof Error ? serverError.message : "Could not load server EPUB.");
+    } finally {
+      setIsImporting(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     warmJapaneseTokenizer();
-    loadBooks()
-      .then(async (storedBooks) => {
-        const upgradedBooks = await Promise.all(storedBooks.map(upgradeBookTokenization));
+    Promise.all([
+      loadBooks(),
+      loadServerBooks().catch((serverError: unknown) => {
+        if (!cancelled) {
+          setError(
+            serverError instanceof Error
+              ? serverError.message
+              : "Could not load the server EPUB library.",
+          );
+        }
+        return [];
+      }),
+    ])
+      .then(async ([storedBooks, serverBooks]) => {
+        const upgradedBooks = await Promise.all(
+          storedBooks.map((book) => upgradeBookTokenization({ ...book, source: "local" })),
+        );
         if (cancelled) {
           return;
         }
 
-        setBooks(upgradedBooks);
-        if (upgradedBooks[0]) {
-          setSelectedBookId(upgradedBooks[0].id);
-          setPosition(upgradedBooks[0].progress);
+        const nextBooks = [...serverBooks, ...upgradedBooks];
+        setBooks(nextBooks);
+        if (nextBooks[0]) {
+          setSelectedBookId(nextBooks[0].id);
+          setPosition(nextBooks[0].progress);
+          if (nextBooks[0].source === "server") {
+            void hydrateServerBook(nextBooks[0]);
+          }
         }
       })
       .catch((loadError: unknown) => {
@@ -36,7 +103,7 @@ export function useBookLibrary() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hydrateServerBook]);
 
   const selectedBook = useMemo(
     () => books.find((book) => book.id === selectedBookId),
@@ -48,13 +115,14 @@ export function useBookLibrary() {
     setIsImporting(true);
     try {
       const book = await parseEpub(file);
-      await saveBook(book);
+      const localBook: Book = { ...book, source: "local" };
+      await saveBook(localBook);
       setBooks((currentBooks) => [
-        book,
-        ...currentBooks.filter((candidate) => candidate.id !== book.id),
+        localBook,
+        ...currentBooks.filter((candidate) => candidate.id !== localBook.id),
       ]);
-      setSelectedBookId(book.id);
-      setPosition(book.progress);
+      setSelectedBookId(localBook.id);
+      setPosition(localBook.progress);
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : "Could not import this EPUB.");
     } finally {
@@ -65,10 +133,18 @@ export function useBookLibrary() {
   const selectBook = useCallback((book: Book) => {
     setSelectedBookId(book.id);
     setPosition(book.progress);
-  }, []);
+    if (book.source === "server" && book.chapters.length === 0) {
+      void hydrateServerBook(book);
+    }
+  }, [hydrateServerBook]);
 
   const removeBook = useCallback(
     async (bookId: string) => {
+      const book = books.find((candidate) => candidate.id === bookId);
+      if (book?.source === "server") {
+        return;
+      }
+
       await deleteBook(bookId);
       setBooks((currentBooks) => {
         const nextBooks = currentBooks.filter((book) => book.id !== bookId);
@@ -79,7 +155,7 @@ export function useBookLibrary() {
         return nextBooks;
       });
     },
-    [selectedBookId],
+    [books, selectedBookId],
   );
 
   const saveSelectedBookProgress = useCallback(
@@ -95,7 +171,17 @@ export function useBookLibrary() {
         }
 
         const updatedBook = { ...book, progress };
-        void saveBook(updatedBook);
+        if (updatedBook.source === "server") {
+          void saveServerBookProgress(updatedBook.id, progress).catch((saveError) => {
+            setError(
+              saveError instanceof Error
+                ? saveError.message
+                : "Could not save server reading progress.",
+            );
+          });
+        } else {
+          void saveBook(updatedBook);
+        }
         return currentBooks.map((candidate) =>
           candidate.id === selectedBookId ? updatedBook : candidate,
         );
@@ -116,6 +202,27 @@ export function useBookLibrary() {
     selectBook,
     removeBook,
     saveSelectedBookProgress,
+  };
+}
+
+async function loadServerBooks() {
+  if (!(await isServerLibraryEnabled())) {
+    return [];
+  }
+
+  const entries = await loadServerBookEntries();
+  return entries.map(createServerBookPlaceholder);
+}
+
+function createServerBookPlaceholder(entry: ServerBookEntry): Book {
+  return {
+    id: entry.id,
+    title: entry.fileName.replace(/\.epub$/i, ""),
+    fileName: entry.fileName,
+    createdAt: entry.modifiedAt,
+    source: "server",
+    chapters: [],
+    progress: entry.progress,
   };
 }
 

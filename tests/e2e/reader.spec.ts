@@ -316,6 +316,49 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await expectProgressCurrent(page, 1);
 });
 
+test("ignores repeated transport keydown events", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "keyboard-repeat.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await expectRsvpDisplayText(page, "猫");
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+
+  await page.keyboard.press("ArrowDown");
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "犬");
+  await page.keyboard.press("ArrowDown");
+  await expectVisibleSentenceText(page, "鳥は空を見る。");
+  await expectRsvpDisplayText(page, "鳥");
+
+  await dispatchTransportKey(page, "ArrowLeft", false);
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
+
+  for (let repeatCount = 0; repeatCount < 4; repeatCount += 1) {
+    await dispatchTransportKey(page, "ArrowLeft", true);
+  }
+
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
+});
+
 test("keeps Migaku-wrapped progress indicator synced while navigating and playing", async ({
   page,
 }, testInfo) => {
@@ -679,6 +722,23 @@ async function expectProgressCurrent(page: Page, current: number) {
   const total = await page.locator("progress").getAttribute("max");
   await expect(page.locator("progress")).toHaveAttribute("value", String(current));
   await expect(page.locator(".reader-progress-value")).toContainText(`${current}/${total}`);
+}
+
+async function dispatchTransportKey(page: Page, code: string, repeat: boolean) {
+  await page.evaluate(
+    ({ keyCode, repeated }) => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          code: keyCode,
+          key: keyCode,
+          repeat: repeated,
+        }),
+      );
+    },
+    { keyCode: code, repeated: repeat },
+  );
 }
 
 async function wrapProgressWithMigakuMarkup(page: Page) {
