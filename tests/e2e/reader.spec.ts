@@ -94,9 +94,9 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
     "false",
   );
   await page.getByRole("button", { name: "Settings" }).click();
-  await setRangeValue(page.locator("label", { hasText: "Speed" }).locator("input"), "550");
-  await expect(page.locator("label", { hasText: "Speed" }).locator(".setting-value")).toHaveText(
-    "550 wpm",
+  await setRangeValue(page.locator("label", { hasText: "Step time" }).locator("input"), "550");
+  await expect(page.locator("label", { hasText: "Step time" }).locator(".setting-value")).toHaveText(
+    "0.55s",
   );
   await setRangeValue(page.locator("label", { hasText: "Font" }).locator("input"), "80");
   await expect(page.locator("label", { hasText: "Font" }).locator(".setting-value")).toHaveText(
@@ -106,15 +106,11 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
-  await setRangeValue(page.locator("label", { hasText: "Punctuation" }).locator("input"), "500");
-  await expect(page.locator("label", { hasText: "Punctuation" }).locator(".setting-value")).toHaveText(
-    "500ms",
-  );
 
   await page.reload();
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.locator("label", { hasText: "Speed" }).locator(".setting-value")).toHaveText(
-    "550 wpm",
+  await expect(page.locator("label", { hasText: "Step time" }).locator(".setting-value")).toHaveText(
+    "0.55s",
   );
   await expect(page.locator("label", { hasText: "Font" }).locator(".setting-value")).toHaveText(
     "80px",
@@ -122,10 +118,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
-  await expect(page.locator("label", { hasText: "Punctuation" }).locator(".setting-value")).toHaveText(
-    "500ms",
-  );
-  await setRangeValue(page.locator("label", { hasText: "Speed" }).locator("input"), "150");
+  await setRangeValue(page.locator("label", { hasText: "Step time" }).locator("input"), "400");
   await setRangeValue(page.locator("label", { hasText: "Words" }).locator("input"), "1");
 
   await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {

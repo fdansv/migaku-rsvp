@@ -4,10 +4,9 @@ export type TokenGroups = number[][];
 export type TokenGroupsBySentenceId = Record<string, TokenGroups | undefined>;
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
-  wpm: 150,
+  stepDurationMs: 400,
   fontSize: 64,
   chunkSize: 1,
-  punctuationDelayMs: 260,
   stopMode: "unknown",
   theme: "paper",
   recapApiUrl: "",
@@ -255,17 +254,8 @@ export function retreatSentencePosition(
   return current;
 }
 
-export function getTokenDelayMs(
-  displayTokens: Sentence["tokens"],
-  settings: ReaderSettings,
-  tokenGroups: TokenGroups = [],
-) {
-  const wordCount = Math.max(1, getDisplayWordUnitCount(displayTokens, tokenGroups));
-  const baseDelay = (60_000 * wordCount) / settings.wpm;
-  const punctuationDelay = displayTokens.some((token) => /[、。！？!?]$/u.test(token.text))
-    ? settings.punctuationDelayMs
-    : 0;
-  return Math.max(40, Math.round(baseDelay + punctuationDelay));
+export function getStepDelayMs(settings: ReaderSettings) {
+  return Math.max(40, Math.round(settings.stepDurationMs));
 }
 
 export function shouldStopForMode(
@@ -466,28 +456,6 @@ function getNormalizedTokenGroups(sentence: Sentence, tokenGroups: TokenGroups =
 
 function getUnitStartForTokenIndex(units: TokenGroups, tokenIndex: number) {
   return units.find((unit) => unit.includes(tokenIndex))?.[0];
-}
-
-function getDisplayWordUnitCount(displayTokens: Sentence["tokens"], tokenGroups: TokenGroups = []) {
-  const displayWordIndexes = new Set(
-    displayTokens.filter((token) => token.isWordLike).map((token) => token.index),
-  );
-  const groupedIndexes = new Set<number>();
-  let groupCount = 0;
-
-  for (const group of tokenGroups) {
-    if (!group.some((tokenIndex) => displayWordIndexes.has(tokenIndex))) {
-      continue;
-    }
-    groupCount += 1;
-    group.forEach((tokenIndex) => groupedIndexes.add(tokenIndex));
-  }
-
-  const ungroupedWordCount = displayTokens.filter(
-    (token) => token.isWordLike && !groupedIndexes.has(token.index),
-  ).length;
-
-  return groupCount + ungroupedWordCount;
 }
 
 function getUnknownWordUnitKeys(

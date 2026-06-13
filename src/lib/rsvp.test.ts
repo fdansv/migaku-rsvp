@@ -11,7 +11,7 @@ import {
   getDisplayTokens,
   getPositionForProgressUnit,
   getProgressStats,
-  getTokenDelayMs,
+  getStepDelayMs,
   retreatPosition,
   retreatSentencePosition,
   shouldStopForMode,
@@ -166,18 +166,10 @@ describe("RSVP reader logic", () => {
     });
   });
 
-  it("adds extra delay after punctuation", () => {
-    const delay = getTokenDelayMs(getDisplayTokens(sentence, 2, 1), DEFAULT_SETTINGS);
-    const base = getTokenDelayMs(getDisplayTokens(sentence, 0, 1), DEFAULT_SETTINGS);
-    expect(delay).toBeGreaterThan(base);
-  });
+  it("uses a constant step delay from settings", () => {
+    const settings = { ...DEFAULT_SETTINGS, stepDurationMs: 550 };
 
-  it("scales step delay by the number of visible words", () => {
-    const settings = { ...DEFAULT_SETTINGS, punctuationDelayMs: 0 };
-    const oneWordDelay = getTokenDelayMs(getDisplayTokens(sentence, 0, 1), settings);
-    const twoWordDelay = getTokenDelayMs(getDisplayTokens(sentence, 0, 2), settings);
-
-    expect(twoWordDelay).toBe(oneWordDelay * 2);
+    expect(getStepDelayMs(settings)).toBe(550);
   });
 
   it("uses Migaku token groups as display and navigation boundaries", () => {
@@ -200,16 +192,11 @@ describe("RSVP reader logic", () => {
     })).toEqual({ sentenceIndex: 0, tokenIndex: catIndex });
   });
 
-  it("counts a grouped Migaku token as one delay and i+1 unit", () => {
-    const settings = { ...DEFAULT_SETTINGS, punctuationDelayMs: 0 };
+  it("counts a grouped Migaku token as one i+1 unit", () => {
     const catIndex = sentence.tokens.find((token) => token.text.includes("猫"))?.index ?? 0;
     const particleIndex = sentence.tokens.find((token) => token.text.includes("が"))?.index ?? 1;
     const tokenGroups = [[catIndex, particleIndex]];
-    const displayTokens = getDisplayTokens(sentence, catIndex, 1, tokenGroups);
-    const fallbackDelay = getTokenDelayMs(displayTokens, settings);
-    const groupedDelay = getTokenDelayMs(displayTokens, settings, tokenGroups);
 
-    expect(groupedDelay).toBe(fallbackDelay / 2);
     expect(
       shouldStopForTokenIndexes(
         "i+1",

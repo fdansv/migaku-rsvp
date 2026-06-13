@@ -41,13 +41,13 @@ export function SettingsPanel({ settings, isOpen, onToggle, onChange }: Settings
       {isOpen ? (
         <div className="settings-body">
           <RangeSetting
-            label="Speed"
-            min={80}
-            max={600}
-            step={10}
-            value={settings.wpm}
-            format={(value) => `${value} wpm`}
-            onValue={(value) => onChange({ wpm: value })}
+            label="Step time"
+            min={100}
+            max={2000}
+            step={50}
+            value={settings.stepDurationMs}
+            format={formatStepDuration}
+            onValue={(value) => onChange({ stepDurationMs: value })}
           />
           <RangeSetting
             label="Font"
@@ -80,15 +80,6 @@ export function SettingsPanel({ settings, isOpen, onToggle, onChange }: Settings
               <option value="i+1">i+1</option>
             </select>
           </label>
-          <RangeSetting
-            label="Punctuation"
-            min={0}
-            max={1200}
-            step={20}
-            value={settings.punctuationDelayMs}
-            format={(value) => `${value}ms`}
-            onValue={(value) => onChange({ punctuationDelayMs: value })}
-          />
           <label>
             Theme
             <select
@@ -136,6 +127,10 @@ export function SettingsPanel({ settings, isOpen, onToggle, onChange }: Settings
       ) : null}
     </aside>
   );
+}
+
+function formatStepDuration(value: number) {
+  return `${(value / 1000).toFixed(2)}s`;
 }
 
 function RangeSetting({ label, min, max, step, value, format, onValue }: RangeSettingProps) {

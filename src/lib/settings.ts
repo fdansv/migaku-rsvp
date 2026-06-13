@@ -21,17 +21,20 @@ export function saveSettings(settings: ReaderSettings) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizeSettings(settings)));
 }
 
-export function normalizeSettings(value: Partial<ReaderSettings>): ReaderSettings {
+type StoredSettings = Partial<ReaderSettings> & {
+  wpm?: unknown;
+};
+
+export function normalizeSettings(value: StoredSettings): ReaderSettings {
   return {
-    wpm: clampNumber(value.wpm, 80, 600, DEFAULT_SETTINGS.wpm),
+    stepDurationMs: clampNumber(
+      value.stepDurationMs ?? legacyStepDurationMs(value.wpm),
+      100,
+      2_000,
+      DEFAULT_SETTINGS.stepDurationMs,
+    ),
     fontSize: clampNumber(value.fontSize, 36, 96, DEFAULT_SETTINGS.fontSize),
     chunkSize: clampNumber(value.chunkSize, 1, 4, DEFAULT_SETTINGS.chunkSize),
-    punctuationDelayMs: clampNumber(
-      value.punctuationDelayMs,
-      0,
-      1_200,
-      DEFAULT_SETTINGS.punctuationDelayMs,
-    ),
     stopMode:
       value.stopMode && STOP_MODES.has(value.stopMode) ? value.stopMode : DEFAULT_SETTINGS.stopMode,
     theme: value.theme && THEMES.has(value.theme) ? value.theme : DEFAULT_SETTINGS.theme,
@@ -39,6 +42,13 @@ export function normalizeSettings(value: Partial<ReaderSettings>): ReaderSetting
     recapApiKey: normalizeString(value.recapApiKey, DEFAULT_SETTINGS.recapApiKey, 4_096),
     recapModel: normalizeString(value.recapModel, DEFAULT_SETTINGS.recapModel, 256),
   };
+}
+
+function legacyStepDurationMs(wpm: unknown) {
+  if (typeof wpm !== "number" || Number.isNaN(wpm) || wpm <= 0) {
+    return undefined;
+  }
+  return 60_000 / wpm;
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number) {

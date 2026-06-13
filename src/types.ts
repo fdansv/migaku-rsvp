@@ -56,10 +56,9 @@ export interface Book {
 }
 
 export interface ReaderSettings {
-  wpm: number;
+  stepDurationMs: number;
   fontSize: number;
   chunkSize: number;
-  punctuationDelayMs: number;
   stopMode: StopMode;
   theme: ThemeMode;
   recapApiUrl: string;

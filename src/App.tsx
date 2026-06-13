@@ -16,7 +16,7 @@ import {
   getDisplayTokens,
   getPositionForProgressUnit,
   getProgressStats,
-  getTokenDelayMs,
+  getStepDelayMs,
   retreatPosition,
   retreatSentencePosition,
   shouldStopForTokenIndexes,
@@ -210,7 +210,7 @@ export function App() {
         }
         return next;
       });
-    }, getTokenDelayMs(displayTokens, settings, migakuTokenGroups));
+    }, getStepDelayMs(settings));
     playbackTimerRef.current = timer;
 
     return () => {
@@ -222,8 +222,6 @@ export function App() {
   }, [
     activeKey,
     currentSentence,
-    displayTokens,
-    migakuTokenGroups,
     migaku.statuses,
     playing,
     sentences,
