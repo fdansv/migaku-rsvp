@@ -208,9 +208,6 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 
   await page.getByRole("button", { name: "Next" }).click();
-  await expectRsvpDisplayText(page, "走る。");
-  await expect(activeRsvpToken(page)).toHaveText("走る");
-  await page.keyboard.press("ArrowDown");
   await expectRsvpDisplayText(page, "犬");
   await expect(activeRsvpToken(page)).toHaveText("犬");
   await expect
@@ -297,6 +294,22 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await expectRsvpDisplayText(page, "が");
   await expectProgressCurrent(page, 2);
 
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "猫");
+  await expectProgressCurrent(page, 1);
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "が");
+  await expectProgressCurrent(page, 2);
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 3);
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "が");
+  await expectProgressCurrent(page, 2);
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "猫");
+  await expectProgressCurrent(page, 1);
+
   await page.keyboard.press("ArrowDown");
   await expectVisibleSentenceText(page, "犬も走る。");
   await expectRsvpDisplayText(page, "犬");
@@ -311,11 +324,16 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await expectProgressCurrent(page, 6);
 
   await page.getByRole("button", { name: "Next" }).click();
+  await expectVisibleSentenceText(page, "鳥は空を見る。");
+  await expectRsvpDisplayText(page, "鳥");
+  await expectProgressCurrent(page, 7);
+
+  await page.getByRole("button", { name: "Previous" }).click();
   await expectVisibleSentenceText(page, "犬も走る。");
   await expectRsvpDisplayText(page, "走る。");
   await expectProgressCurrent(page, 6);
 
-  await page.getByRole("button", { name: "Previous" }).click();
+  await page.keyboard.press("ArrowLeft");
   await expectRsvpDisplayText(page, "も");
   await expectProgressCurrent(page, 5);
 
@@ -333,14 +351,9 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await expectProgressCurrent(page, 7);
 
   await page.getByRole("button", { name: "Previous" }).click();
-  await expectVisibleSentenceText(page, "鳥は空を見る。");
-  await expectRsvpDisplayText(page, "鳥");
-  await expectProgressCurrent(page, 7);
-
-  await page.keyboard.press("ArrowUp");
   await expectVisibleSentenceText(page, "犬も走る。");
-  await expectRsvpDisplayText(page, "犬");
-  await expectProgressCurrent(page, 4);
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
 
   await page.keyboard.press("ArrowUp");
   await expectVisibleSentenceText(page, "猫が走る。");
@@ -377,21 +390,18 @@ test("ignores repeated transport keydown events", async ({ page }, testInfo) => 
   await expectVisibleSentenceText(page, "鳥は空を見る。");
   await expectRsvpDisplayText(page, "鳥");
 
-  await page.keyboard.press("ArrowRight");
-  await expectRsvpDisplayText(page, "は");
-
   await dispatchTransportKey(page, "ArrowLeft", false);
-  await expectVisibleSentenceText(page, "鳥は空を見る。");
-  await expectRsvpDisplayText(page, "鳥");
-  await expectProgressCurrent(page, 7);
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
 
   for (let repeatCount = 0; repeatCount < 4; repeatCount += 1) {
     await dispatchTransportKey(page, "ArrowLeft", true);
   }
 
-  await expectVisibleSentenceText(page, "鳥は空を見る。");
-  await expectRsvpDisplayText(page, "鳥");
-  await expectProgressCurrent(page, 7);
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
 });
 
 test("keeps Migaku-wrapped progress indicator synced while navigating and playing", async ({
