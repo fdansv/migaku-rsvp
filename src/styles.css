@@ -247,14 +247,14 @@ button {
 
 .reader {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(38px, auto) minmax(0, 1fr) auto auto;
   gap: 16px;
   min-width: 0;
   padding: 18px clamp(18px, 4vw, 56px);
 }
 
 .reader--with-recap {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(38px, auto) auto minmax(0, 1fr) auto auto;
 }
 
 .reader-meta {
@@ -262,8 +262,14 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-height: 38px;
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.reader-meta > span {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .reader-meta > span,
@@ -276,13 +282,15 @@ button {
 .reader-progress {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   justify-content: flex-end;
   gap: 10px;
+  min-height: 32px;
   white-space: nowrap;
 }
 
 .progress-jump-button {
-  max-width: 100%;
+  width: 15ch;
   padding: 4px 6px;
   border: 0;
   border-radius: 6px;
@@ -303,11 +311,13 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  width: 15ch;
   min-width: 0;
 }
 
 .progress-jump-input {
-  width: clamp(8ch, 12vw, 14ch);
+  width: 100%;
+  min-width: 0;
   min-height: 28px;
   padding: 0 8px;
   border: 1px solid var(--line);
@@ -384,12 +394,20 @@ button {
   height: 1.15em;
   line-height: 1.15;
   white-space: nowrap;
-  transform: translate(calc(-50% + var(--rsvp-track-offset)), -50%)
-    scale(var(--rsvp-track-scale));
+  transform: translate(calc(-50% + var(--rsvp-track-offset)), -50%);
   transform-origin: center;
   z-index: 2;
-  will-change: transform;
   pointer-events: none;
+}
+
+.rsvp-sentence-scale {
+  display: inline-block;
+  height: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+  transform: scale(var(--rsvp-track-scale));
+  transform-origin: center;
+  will-change: transform;
 }
 
 .rsvp-display-token {
@@ -919,6 +937,11 @@ progress::-webkit-progress-value {
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    min-height: 76px;
+  }
+
+  .reader-progress {
+    justify-content: center;
   }
 
   .rsvp-token-display {

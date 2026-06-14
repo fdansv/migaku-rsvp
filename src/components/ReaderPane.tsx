@@ -75,6 +75,7 @@ export function ReaderPane({
   onCloseRecap,
 }: ReaderPaneProps) {
   const sentenceTrackRef = useRef<HTMLSpanElement>(null);
+  const sentenceScaleRef = useRef<HTMLSpanElement>(null);
   const progressInputRef = useRef<HTMLInputElement>(null);
   const [sentenceContextHovered, setSentenceContextHovered] = useState(false);
   const [progressEditing, setProgressEditing] = useState(false);
@@ -126,10 +127,12 @@ export function ReaderPane({
   useLayoutEffect(() => {
     const display = rsvpDisplayRef.current;
     const track = sentenceTrackRef.current;
-    if (!display || !track || displayTokenIndexes.length === 0) {
+    const scale = sentenceScaleRef.current;
+    if (!display || !track || !scale || displayTokenIndexes.length === 0) {
       return;
     }
     const displayElement = display;
+    const scaleElement = scale;
 
     function alignTrack() {
       if (!track) {
@@ -138,7 +141,7 @@ export function ReaderPane({
 
       const activeIndexSet = new Set(displayTokenIndexes.map(String));
       const activeElements = Array.from(
-        track.querySelectorAll<HTMLElement>("[data-rsvp-display-token-index]"),
+        scaleElement.querySelectorAll<HTMLElement>("[data-rsvp-display-token-index]"),
       ).filter((element) =>
         splitTokenIndexes(element.getAttribute("data-rsvp-display-token-index")).some(
           (tokenIndex) => activeIndexSet.has(tokenIndex),
@@ -156,7 +159,7 @@ export function ReaderPane({
         ...activeElements.map((element) => element.offsetLeft + element.offsetWidth),
       );
       const activeCenter = activeLeft + (activeRight - activeLeft) / 2;
-      const trackCenter = track.scrollWidth / 2;
+      const trackCenter = scaleElement.scrollWidth / 2;
       const offset = trackCenter - activeCenter;
       const activeWidth = activeRight - activeLeft;
       const availableWidth = displayElement.clientWidth * 0.96;
@@ -170,7 +173,7 @@ export function ReaderPane({
     const resizeObserver =
       "ResizeObserver" in window ? new ResizeObserver(() => alignTrack()) : null;
     resizeObserver?.observe(display);
-    resizeObserver?.observe(track);
+    resizeObserver?.observe(scale);
 
     return () => {
       window.cancelAnimationFrame(animationFrame);
@@ -340,44 +343,46 @@ export function ReaderPane({
                 className="rsvp-sentence-track"
                 data-mgk-sentence={currentSentence.text}
               >
-                {tokenRenderGroups.map((tokens) => {
-                  const tokenIndexes = tokens.map((token) => token.index);
-                  const tokenIndexValue = tokenIndexes.join(",");
-                  const tokenStatus = getActiveStatus(tokenIndexes, migaku.statuses);
-                  const mirror = getGroupMirror(tokenIndexes, migaku.mirrors, tokenStatus);
-                  const mirrorAttributes = mirror ? reactDataAttributes(mirror.attributes) : {};
-                  const isDisplayToken = tokenIndexes.some((tokenIndex) =>
-                    displayTokenIndexSet.has(tokenIndex),
-                  );
-                  const isWordLike = tokens.some((token) => token.isWordLike);
+                <span ref={sentenceScaleRef} className="rsvp-sentence-scale">
+                  {tokenRenderGroups.map((tokens) => {
+                    const tokenIndexes = tokens.map((token) => token.index);
+                    const tokenIndexValue = tokenIndexes.join(",");
+                    const tokenStatus = getActiveStatus(tokenIndexes, migaku.statuses);
+                    const mirror = getGroupMirror(tokenIndexes, migaku.mirrors, tokenStatus);
+                    const mirrorAttributes = mirror ? reactDataAttributes(mirror.attributes) : {};
+                    const isDisplayToken = tokenIndexes.some((tokenIndex) =>
+                      displayTokenIndexSet.has(tokenIndex),
+                    );
+                    const isWordLike = tokens.some((token) => token.isWordLike);
 
-                  return (
-                    <span
-                      key={tokens.map((token) => token.id).join(",")}
-                      className={[
-                        "rsvp-display-token",
-                        isDisplayToken
-                          ? "rsvp-display-token--active"
-                          : "rsvp-display-token--context",
-                        mirror ? "migaku-token" : undefined,
-                        tokenStatus && tokenStatus !== "unparsed"
-                          ? `rsvp-display-token--${tokenStatus}`
-                          : undefined,
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      data-rsvp-display-token-index={tokenIndexValue}
-                      data-rsvp-visible-token={isDisplayToken ? "true" : undefined}
-                      data-rsvp-visible-word={
-                        isDisplayToken && isWordLike ? "true" : undefined
-                      }
-                      {...mirrorAttributes}
-                      data-mgk-sentence={currentSentence.text}
-                    >
-                      {tokens.map((token) => token.text).join("")}
-                    </span>
-                  );
-                })}
+                    return (
+                      <span
+                        key={tokens.map((token) => token.id).join(",")}
+                        className={[
+                          "rsvp-display-token",
+                          isDisplayToken
+                            ? "rsvp-display-token--active"
+                            : "rsvp-display-token--context",
+                          mirror ? "migaku-token" : undefined,
+                          tokenStatus && tokenStatus !== "unparsed"
+                            ? `rsvp-display-token--${tokenStatus}`
+                            : undefined,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        data-rsvp-display-token-index={tokenIndexValue}
+                        data-rsvp-visible-token={isDisplayToken ? "true" : undefined}
+                        data-rsvp-visible-word={
+                          isDisplayToken && isWordLike ? "true" : undefined
+                        }
+                        {...mirrorAttributes}
+                        data-mgk-sentence={currentSentence.text}
+                      >
+                        {tokens.map((token) => token.text).join("")}
+                      </span>
+                    );
+                  })}
+                </span>
               </span>
             </div>
             <MigakuSentenceSurface
