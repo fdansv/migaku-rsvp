@@ -147,8 +147,9 @@ async function generateAiText({
   const apiUrl = settings.recapApiUrl.trim();
   const apiKey = settings.recapApiKey.trim();
   const selectedModel = model ?? settings.recapModel.trim();
+  const usesServerProxy = isServerAiProxyUrl(apiUrl);
 
-  if (!apiUrl || !apiKey) {
+  if (!apiUrl || (!apiKey && !usesServerProxy)) {
     throw new Error("Add an AI URL and API key in Settings.");
   }
 
@@ -161,7 +162,7 @@ async function generateAiText({
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payloadToSend),
@@ -479,6 +480,11 @@ function textFromValue(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isServerAiProxyUrl(apiUrl: string) {
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  return apiUrl === "/api/ai/chat" || (origin !== "" && apiUrl.startsWith(`${origin}/api/ai/chat`));
 }
 
 function cleanSentenceTranslation(value: string) {

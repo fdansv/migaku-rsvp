@@ -11,6 +11,28 @@ export interface ServerBookEntry {
   progress: ReaderPosition;
 }
 
+export interface ServerAiStatus {
+  enabled: boolean;
+  apiUrl: string;
+  recapModel: string;
+}
+
+export async function loadServerAiStatus() {
+  try {
+    const response = await fetch(`${API_BASE}/ai/status`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as ServerAiStatus;
+  } catch {
+    return null;
+  }
+}
+
 export async function isServerLibraryEnabled() {
   try {
     const response = await fetch(`${API_BASE}/library/status`, {

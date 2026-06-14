@@ -24,11 +24,13 @@ import {
 } from "./lib/rsvp";
 import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
+import { loadServerAiStatus } from "./lib/serverLibrary";
 import type { Book, ReaderPosition, ReaderSettings, Sentence } from "./types";
 
 const BUFFER_SENTENCES_BEHIND = 20;
 const BUFFER_SENTENCES_AHEAD = 100;
 const BUFFER_WINDOW_SIZE = 40;
+const SERVER_AI_API_URL = "/api/ai/chat";
 const TRANSPORT_KEY_CODES = new Set([
   "Space",
   "ArrowRight",
@@ -89,6 +91,32 @@ export function App() {
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    void loadServerAiStatus().then((status) => {
+      if (canceled || !status?.enabled) {
+        return;
+      }
+
+      setSettings((previous) => {
+        if (previous.recapApiUrl.trim() || previous.recapApiKey.trim()) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          recapApiUrl: status.apiUrl || SERVER_AI_API_URL,
+          recapModel: previous.recapModel || status.recapModel,
+        };
+      });
+    });
+
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   const sentences = useMemo(() => flattenSentences(selectedBook), [selectedBook]);
   const safePosition = useMemo(() => clampPosition(position, sentences), [position, sentences]);
@@ -202,7 +230,9 @@ export function App() {
     if (!currentSentence || !shouldTranslateCurrentSentence) {
       return;
     }
-    if (!settings.recapApiUrl.trim() || !settings.recapApiKey.trim()) {
+    const apiUrl = settings.recapApiUrl.trim();
+    const usesServerAi = apiUrl === SERVER_AI_API_URL;
+    if (!apiUrl || (!settings.recapApiKey.trim() && !usesServerAi)) {
       return;
     }
 

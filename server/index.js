@@ -17,7 +17,21 @@ const PROGRESS_PATH = path.resolve(
 );
 const DIST_DIR = path.resolve(fileURLToPath(new URL("../dist", import.meta.url)));
 const MAX_JSON_BODY_BYTES = 16 * 1024;
+const MAX_AI_PROXY_BODY_BYTES = Number(process.env.MIGAKU_RSVP_AI_BODY_BYTES ?? 512 * 1024);
 const MAX_EPUB_UPLOAD_BYTES = Number(process.env.MAX_EPUB_UPLOAD_BYTES ?? 500 * 1024 * 1024);
+const DEFAULT_AI_API_URL = "https://api.openai.com/v1/chat/completions";
+const AI_API_URL =
+  normalizeEnvString(process.env.MIGAKU_RSVP_AI_API_URL) ??
+  normalizeEnvString(process.env.OPENAI_API_URL) ??
+  DEFAULT_AI_API_URL;
+const AI_API_KEY =
+  normalizeEnvString(process.env.MIGAKU_RSVP_AI_API_KEY) ??
+  normalizeEnvString(process.env.OPENAI_API_KEY) ??
+  "";
+const AI_RECAP_MODEL =
+  normalizeEnvString(process.env.MIGAKU_RSVP_AI_RECAP_MODEL) ??
+  normalizeEnvString(process.env.OPENAI_MODEL) ??
+  "";
 
 const MIME_TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -44,6 +58,7 @@ createServer((request, response) => {
   } else {
     console.log("EPUB library disabled. Set EPUB_LIBRARY_PATH to enable server books.");
   }
+  console.log(AI_API_KEY ? `AI proxy enabled: ${AI_API_URL}` : "AI proxy disabled.");
 });
 
 async function routeRequest(request, response) {
@@ -58,6 +73,20 @@ async function routeRequest(request, response) {
 }
 
 async function routeApiRequest(request, response, url) {
+  if (request.method === "GET" && url.pathname === "/api/ai/status") {
+    sendJson(response, 200, {
+      enabled: Boolean(AI_API_KEY),
+      apiUrl: "/api/ai/chat",
+      recapModel: AI_RECAP_MODEL,
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/ai/chat") {
+    await routeAiProxyRequest(request, response);
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/library/status") {
     const bookCount = EPUB_LIBRARY_PATH ? (await listLibraryBooks()).length : 0;
     sendJson(response, 200, {
@@ -125,6 +154,52 @@ async function routeApiRequest(request, response, url) {
   }
 
   sendJson(response, 404, { error: "Not found." });
+}
+
+async function routeAiProxyRequest(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  if (!AI_API_KEY) {
+    sendJson(response, 503, { error: "Server AI is not configured." });
+    return;
+  }
+
+  const payload = await readJsonBody(request, MAX_AI_PROXY_BODY_BYTES);
+  if (!isRecord(payload)) {
+    sendJson(response, 400, { error: "AI request body must be a JSON object." });
+    return;
+  }
+
+  const upstreamPayload = { ...payload };
+  if (!upstreamPayload.model && AI_RECAP_MODEL) {
+    upstreamPayload.model = AI_RECAP_MODEL;
+  }
+
+  let upstreamResponse;
+  try {
+    upstreamResponse = await fetch(AI_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${AI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(upstreamPayload),
+    });
+  } catch {
+    sendJson(response, 502, { error: "AI upstream request failed." });
+    return;
+  }
+
+  const body = await upstreamResponse.text();
+  response.writeHead(upstreamResponse.status, {
+    "Content-Type": upstreamResponse.headers.get("content-type") ?? "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+  });
+  response.end(body);
 }
 
 async function routeProgressRequest(request, response, bookId) {
@@ -333,6 +408,10 @@ function isReaderPosition(value) {
   );
 }
 
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function sendJson(response, statusCode, payload) {
   const body = `${JSON.stringify(payload)}\n`;
   response.writeHead(statusCode, {
@@ -384,13 +463,13 @@ class UploadError extends Error {
   }
 }
 
-function readJsonBody(request) {
+function readJsonBody(request, maxBytes = MAX_JSON_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let body = "";
     request.setEncoding("utf8");
     request.on("data", (chunk) => {
       body += chunk;
-      if (body.length > MAX_JSON_BODY_BYTES) {
+      if (body.length > maxBytes) {
         reject(new Error("Request body is too large."));
         request.destroy();
       }
@@ -404,6 +483,10 @@ function readJsonBody(request) {
     });
     request.on("error", reject);
   });
+}
+
+function normalizeEnvString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 async function fileExists(filePath) {

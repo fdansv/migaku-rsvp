@@ -155,6 +155,34 @@ describe("recap helpers", () => {
     expect(payload.messages[1].content).toContain("猫が走る。");
   });
 
+  it("allows same-origin server AI proxy requests without a browser API key", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: "The cat runs." } }] }), {
+        status: 200,
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      generateAiSentenceTranslation({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          recapApiUrl: "/api/ai/chat",
+          recapApiKey: "",
+          recapModel: "user-entered-model",
+        },
+        sentenceText: "猫が走る。",
+      }),
+    ).resolves.toBe("The cat runs.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init?.headers).toMatchObject({
+      "Content-Type": "application/json",
+    });
+    expect(init?.headers).not.toHaveProperty("Authorization");
+  });
+
   it("switches to max_tokens when the model rejects max_completion_tokens", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
