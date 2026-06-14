@@ -49,16 +49,16 @@ export interface Book {
   author?: string;
   fileName: string;
   createdAt: string;
+  source?: "local" | "server";
   tokenizerVersion?: string;
   chapters: Chapter[];
   progress: ReaderPosition;
 }
 
 export interface ReaderSettings {
-  wpm: number;
+  stepDurationMs: number;
   fontSize: number;
   chunkSize: number;
-  punctuationDelayMs: number;
   stopMode: StopMode;
   theme: ThemeMode;
   recapApiUrl: string;

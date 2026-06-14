@@ -16,20 +16,36 @@ import {
   getDisplayTokens,
   getPositionForProgressUnit,
   getProgressStats,
-  getTokenDelayMs,
+  getStepDelayMs,
+  getUnknownWordUnitCount,
   retreatPosition,
   retreatSentencePosition,
   shouldStopForTokenIndexes,
 } from "./lib/rsvp";
-import { generateAiRecap, getRecapPages } from "./lib/recap";
+import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
-import type { Book, ReaderSettings, Sentence } from "./types";
+import type { Book, ReaderPosition, ReaderSettings, Sentence } from "./types";
 
 const BUFFER_SENTENCES_BEHIND = 20;
 const BUFFER_SENTENCES_AHEAD = 100;
 const BUFFER_WINDOW_SIZE = 40;
+const TRANSPORT_KEY_CODES = new Set([
+  "Space",
+  "ArrowRight",
+  "ArrowLeft",
+  "ArrowDown",
+  "ArrowUp",
+]);
 
 type RecapStatus = "idle" | "loading" | "success" | "error";
+type SentenceTranslationStatus = "loading" | "success" | "error";
+
+interface SentenceTranslation {
+  status: SentenceTranslationStatus;
+  text: string;
+  error: string;
+  sourceText: string;
+}
 
 export function App() {
   const {
@@ -61,8 +77,14 @@ export function App() {
     error: "",
     sourceLabel: "",
   });
+  const [sentenceTranslations, setSentenceTranslations] = useState<
+    Record<string, SentenceTranslation>
+  >({});
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
+  const playbackTimerRef = useRef<number | null>(null);
+  const manualStepHistoryRef = useRef<ReaderPosition[]>([]);
+  const translationRequestsRef = useRef(new Set<string>());
 
   useEffect(() => {
     saveSettings(settings);
@@ -140,6 +162,16 @@ export function App() {
       displayTokenIndexes,
       migakuTokenGroups,
     );
+  const shouldTranslateCurrentSentence =
+    currentSentence !== undefined &&
+    migaku.parsed &&
+    getUnknownWordUnitCount(currentSentence, migaku.statuses, migakuTokenGroups) > 1;
+  const currentSentenceTranslation =
+    currentSentence && shouldTranslateCurrentSentence
+      ? sentenceTranslations[currentSentence.id]
+      : undefined;
+  const sentenceSubtitle =
+    currentSentenceTranslation?.status === "success" ? currentSentenceTranslation.text : "";
   const { isFileDragActive, dragHandlers } = useFileDrop({
     disabled: isImporting,
     onFile: handleImportFile,
@@ -156,7 +188,80 @@ export function App() {
 
   useEffect(() => {
     setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" });
+    setSentenceTranslations({});
+    translationRequestsRef.current.clear();
+    manualStepHistoryRef.current = [];
   }, [selectedBookId]);
+
+  useEffect(() => {
+    setSentenceTranslations({});
+    translationRequestsRef.current.clear();
+  }, [settings.recapApiUrl, settings.recapApiKey]);
+
+  useEffect(() => {
+    if (!currentSentence || !shouldTranslateCurrentSentence) {
+      return;
+    }
+    if (!settings.recapApiUrl.trim() || !settings.recapApiKey.trim()) {
+      return;
+    }
+
+    const sentenceId = currentSentence.id;
+    const sentenceText = currentSentence.text;
+    const cached = sentenceTranslations[sentenceId];
+    if (cached?.sourceText === sentenceText) {
+      return;
+    }
+    if (translationRequestsRef.current.has(sentenceId)) {
+      return;
+    }
+
+    translationRequestsRef.current.add(sentenceId);
+    setSentenceTranslations((previous) => ({
+      ...previous,
+      [sentenceId]: {
+        status: "loading",
+        text: "",
+        error: "",
+        sourceText: sentenceText,
+      },
+    }));
+
+    void generateAiSentenceTranslation({
+      settings,
+      sentenceText,
+    })
+      .then((translation) => {
+        setSentenceTranslations((previous) => ({
+          ...previous,
+          [sentenceId]: {
+            status: "success",
+            text: translation,
+            error: "",
+            sourceText: sentenceText,
+          },
+        }));
+      })
+      .catch((error) => {
+        setSentenceTranslations((previous) => ({
+          ...previous,
+          [sentenceId]: {
+            status: "error",
+            text: "",
+            error: error instanceof Error ? error.message : "Could not translate sentence.",
+            sourceText: sentenceText,
+          },
+        }));
+      })
+      .finally(() => {
+        translationRequestsRef.current.delete(sentenceId);
+      });
+  }, [
+    currentSentence,
+    sentenceTranslations,
+    settings,
+    shouldTranslateCurrentSentence,
+  ]);
 
   useEffect(() => {
     if (!selectedBookId || !currentSentence) {
@@ -172,16 +277,21 @@ export function App() {
 
   useEffect(() => {
     if (!playing || !currentSentence) {
+      clearPlaybackTimer();
       return;
     }
 
     if (shouldStop && skipStopKey !== activeKey) {
+      clearPlaybackTimer();
       setPlaying(false);
       setAutoPaused(true);
       return;
     }
 
     const timer = window.setTimeout(() => {
+      if (playbackTimerRef.current === timer) {
+        playbackTimerRef.current = null;
+      }
       setPosition((previous) => {
         const next = advancePosition(
           previous,
@@ -197,14 +307,18 @@ export function App() {
         }
         return next;
       });
-    }, getTokenDelayMs(displayTokens, settings, migakuTokenGroups));
+    }, getStepDelayMs(settings));
+    playbackTimerRef.current = timer;
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (playbackTimerRef.current === timer) {
+        playbackTimerRef.current = null;
+      }
+    };
   }, [
     activeKey,
     currentSentence,
-    displayTokens,
-    migakuTokenGroups,
     migaku.statuses,
     playing,
     sentences,
@@ -219,6 +333,11 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, select, textarea, [contenteditable='true']")) {
+        return;
+      }
+
+      if (event.repeat && TRANSPORT_KEY_CODES.has(event.code)) {
+        event.preventDefault();
         return;
       }
 
@@ -249,17 +368,20 @@ export function App() {
   });
 
   function handleImportFile(file: File) {
-    setPlaying(false);
+    manualStepHistoryRef.current = [];
+    stopPlayback();
     void importBook(file);
   }
 
   function handleSelectBook(book: Book) {
-    setPlaying(false);
+    manualStepHistoryRef.current = [];
+    stopPlayback();
     selectBook(book);
   }
 
   function handleRemoveBook(bookId: string) {
-    setPlaying(false);
+    manualStepHistoryRef.current = [];
+    stopPlayback();
     void removeBook(bookId);
   }
 
@@ -272,8 +394,12 @@ export function App() {
       return;
     }
 
+    manualStepHistoryRef.current = [];
     if (!playing && autoPaused && shouldStop) {
       setSkipStopKey(activeKey);
+    }
+    if (playing) {
+      clearPlaybackTimer();
     }
     setAutoPaused(false);
     setPlaying((previous) => !previous);
@@ -281,46 +407,60 @@ export function App() {
 
   function goNext() {
     setAutoPaused(false);
-    setPlaying(false);
-    setPosition((previous) =>
-      advancePosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
-    );
+    stopPlayback();
+    setPosition((previous) => {
+      const current = clampPosition(previous, sentences);
+      const next = advancePosition(current, sentences, settings.chunkSize, tokenGroupsBySentenceId);
+      if (!positionsEqual(current, next)) {
+        manualStepHistoryRef.current.push(current);
+      }
+      return next;
+    });
   }
 
   function goPrevious() {
     setAutoPaused(false);
-    setPlaying(false);
-    setPosition((previous) =>
-      retreatPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
-    );
+    stopPlayback();
+    setPosition((previous) => {
+      const historical = manualStepHistoryRef.current.pop();
+      if (historical) {
+        return clampPosition(historical, sentences);
+      }
+
+      return retreatPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId);
+    });
   }
 
   function goNextSentence() {
+    manualStepHistoryRef.current = [];
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
     setPosition((previous) => advanceSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
   function goPreviousSentence() {
+    manualStepHistoryRef.current = [];
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
     setPosition((previous) => retreatSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
   function beginProgressJump() {
+    manualStepHistoryRef.current = [];
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
   }
 
   function jumpToProgressLocation(location: number) {
+    manualStepHistoryRef.current = [];
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
     setPosition(getPositionForProgressUnit(location, sentences, settings.chunkSize));
   }
 
   async function handleRecap() {
     setAutoPaused(false);
-    setPlaying(false);
+    stopPlayback();
 
     const pages = getRecapPages(selectedBook, currentSentence);
     const sourceLabel =
@@ -343,6 +483,20 @@ export function App() {
         sourceLabel,
       });
     }
+  }
+
+  function stopPlayback() {
+    clearPlaybackTimer();
+    setPlaying(false);
+  }
+
+  function clearPlaybackTimer() {
+    if (playbackTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(playbackTimerRef.current);
+    playbackTimerRef.current = null;
   }
 
   return (
@@ -376,11 +530,11 @@ export function App() {
           migakuRootRef={migakuRootRef}
           fontSize={settings.fontSize}
           playing={playing}
-          autoPaused={autoPaused}
           recapStatus={recap.status}
           recapSummary={recap.summary}
           recapError={recap.error}
           recapSourceLabel={recap.sourceLabel}
+          sentenceSubtitle={sentenceSubtitle}
           onPrevious={goPrevious}
           onNext={goNext}
           onTogglePlayback={togglePlayback}
@@ -400,6 +554,10 @@ export function App() {
       </div>
     </div>
   );
+}
+
+function positionsEqual(left: ReaderPosition, right: ReaderPosition) {
+  return left.sentenceIndex === right.sentenceIndex && left.tokenIndex === right.tokenIndex;
 }
 
 function getMigakuBufferWindow(

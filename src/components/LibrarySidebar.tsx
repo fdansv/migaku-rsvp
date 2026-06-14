@@ -28,17 +28,25 @@ export function LibrarySidebar({
             >
               <button className="book-select" onClick={() => onSelectBook(book)} type="button">
                 <strong>{book.title}</strong>
-                <small>{book.author ?? book.fileName}</small>
+                <small>
+                  {book.author ?? (book.source === "server" ? "Server library" : book.fileName)}
+                </small>
               </button>
-              <button
-                className="delete-button"
-                aria-label="Delete book"
-                title="Delete book"
-                type="button"
-                onClick={() => onRemoveBook(book.id)}
-              >
-                <Trash2 size={16} aria-hidden="true" />
-              </button>
+              {book.source === "server" ? (
+                <span className="book-source" title="Server library">
+                  EPUB
+                </span>
+              ) : (
+                <button
+                  className="delete-button"
+                  aria-label="Delete book"
+                  title="Delete book"
+                  type="button"
+                  onClick={() => onRemoveBook(book.id)}
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                </button>
+              )}
             </div>
           ))}
         </div>

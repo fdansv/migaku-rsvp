@@ -35,7 +35,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expectRsvpTokensHaveNoTransition(page);
   await expectActiveTokenCentered(page);
   const initialActiveMiddle = await activeTokenMiddle(page);
-  const progressLabel = page.locator(".reader-progress-value");
+  const progressLabel = page.locator(".reader-progress-value--full");
   const progressMeter = page.locator("progress");
   const initialProgressLabel = await progressLabel.innerText();
   const initialProgressValue = await progressMeter.getAttribute("value");
@@ -72,15 +72,31 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveText("猫");
   await expectProgressCurrent(page, 1);
 
+  await page.getByRole("button", { name: /Jump to location/ }).click();
+  await page.getByRole("textbox", { name: "Location" }).fill("4");
+  await page.getByRole("button", { name: "Go to location" }).click();
+  await expectRsvpDisplayText(page, "犬");
+  await expect(activeRsvpToken(page)).toHaveText("犬");
+  await expectProgressCurrent(page, 4);
+
+  await page.getByRole("button", { name: /Jump to location/ }).click();
+  await page.getByRole("textbox", { name: "Location" }).fill("1");
+  await page.getByRole("textbox", { name: "Location" }).blur();
+  await expect(page.getByRole("textbox", { name: "Location" })).toBeVisible();
+  await page.getByRole("button", { name: "Go to location" }).click();
+  await expectRsvpDisplayText(page, "猫");
+  await expect(activeRsvpToken(page)).toHaveText("猫");
+  await expectProgressCurrent(page, 1);
+
   await expect(page.getByRole("button", { name: "Recap" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toHaveAttribute(
     "aria-expanded",
     "false",
   );
   await page.getByRole("button", { name: "Settings" }).click();
-  await setRangeValue(page.locator("label", { hasText: "Speed" }).locator("input"), "550");
-  await expect(page.locator("label", { hasText: "Speed" }).locator(".setting-value")).toHaveText(
-    "550 wpm",
+  await setRangeValue(page.locator("label", { hasText: "Step time" }).locator("input"), "550");
+  await expect(page.locator("label", { hasText: "Step time" }).locator(".setting-value")).toHaveText(
+    "0.55s",
   );
   await setRangeValue(page.locator("label", { hasText: "Font" }).locator("input"), "80");
   await expect(page.locator("label", { hasText: "Font" }).locator(".setting-value")).toHaveText(
@@ -90,15 +106,22 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
-  await setRangeValue(page.locator("label", { hasText: "Punctuation" }).locator("input"), "500");
-  await expect(page.locator("label", { hasText: "Punctuation" }).locator(".setting-value")).toHaveText(
-    "500ms",
+  await page.getByRole("button", { name: "Never" }).click();
+  await expect(page.getByRole("button", { name: "Never" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Unknown" }).click();
+  await expect(page.getByRole("button", { name: "Unknown" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
   );
+  await page.getByRole("button", { name: "Dark" }).click();
+  await expect(page.locator(".app")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Paper" }).click();
+  await expect(page.locator(".app")).toHaveAttribute("data-theme", "paper");
 
   await page.reload();
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.locator("label", { hasText: "Speed" }).locator(".setting-value")).toHaveText(
-    "550 wpm",
+  await expect(page.locator("label", { hasText: "Step time" }).locator(".setting-value")).toHaveText(
+    "0.55s",
   );
   await expect(page.locator("label", { hasText: "Font" }).locator(".setting-value")).toHaveText(
     "80px",
@@ -106,10 +129,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
-  await expect(page.locator("label", { hasText: "Punctuation" }).locator(".setting-value")).toHaveText(
-    "500ms",
-  );
-  await setRangeValue(page.locator("label", { hasText: "Speed" }).locator("input"), "150");
+  await setRangeValue(page.locator("label", { hasText: "Step time" }).locator("input"), "400");
   await setRangeValue(page.locator("label", { hasText: "Words" }).locator("input"), "1");
 
   await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {
@@ -128,7 +148,6 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   });
 
   await expect(page.locator(".migaku-pill")).toContainText("parsed");
-  await expect(page.locator(".status-strip")).toContainText("unknown");
   await expectVisibleSentenceText(page, "猫が走る。");
   await expectRsvpDisplayText(page, "猫");
   await expect(activeRsvpToken(page)).toHaveText("猫");
@@ -169,7 +188,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
 
   await page.getByRole("button", { name: "Play" }).click();
-  await expect(page.locator(".status-strip")).toContainText("Paused on stop rule");
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 
   await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {
     surface.innerHTML = `
@@ -186,7 +205,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expectRsvpDisplayText(page, "走る。");
   await expect(activeRsvpToken(page)).toHaveText("走る");
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
-  await expect(page.locator(".status-strip")).toContainText("Paused on stop rule");
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 
   await page.getByRole("button", { name: "Next" }).click();
   await expectRsvpDisplayText(page, "犬");
@@ -275,6 +294,22 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await expectRsvpDisplayText(page, "が");
   await expectProgressCurrent(page, 2);
 
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "猫");
+  await expectProgressCurrent(page, 1);
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "が");
+  await expectProgressCurrent(page, 2);
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 3);
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "が");
+  await expectProgressCurrent(page, 2);
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "猫");
+  await expectProgressCurrent(page, 1);
+
   await page.keyboard.press("ArrowDown");
   await expectVisibleSentenceText(page, "犬も走る。");
   await expectRsvpDisplayText(page, "犬");
@@ -283,12 +318,38 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await page.getByRole("button", { name: "Next" }).click();
   await expectRsvpDisplayText(page, "も");
   await expectProgressCurrent(page, 5);
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").nth(1).evaluate((surface) => {
+    surface.innerHTML = `
+      <span class="migaku-token known" data-mgk-term="犬も走る" data-mgk-known-status="KNOWN" data-mgk-sentence="犬も走る">
+        <span class="migaku-surface">犬も走る</span>
+      </span>
+      <span>。</span>
+    `;
+  });
+  await expectRsvpDisplayText(page, "も");
+
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "犬");
+  await expectProgressCurrent(page, 4);
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "も");
+  await expectProgressCurrent(page, 5);
 
   await page.keyboard.press("ArrowRight");
   await expectRsvpDisplayText(page, "走る。");
   await expectProgressCurrent(page, 6);
 
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectVisibleSentenceText(page, "鳥は空を見る。");
+  await expectRsvpDisplayText(page, "鳥");
+  await expectProgressCurrent(page, 7);
+
   await page.getByRole("button", { name: "Previous" }).click();
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
+
+  await page.keyboard.press("ArrowLeft");
   await expectRsvpDisplayText(page, "も");
   await expectProgressCurrent(page, 5);
 
@@ -314,6 +375,82 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await expectVisibleSentenceText(page, "猫が走る。");
   await expectRsvpDisplayText(page, "猫");
   await expectProgressCurrent(page, 1);
+});
+
+test("backs up from the playback position after manual steps", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "playback-back-history.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ stepDurationMs: 1000 }));
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "が");
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 3);
+
+  await page.getByRole("button", { name: "Play" }).click();
+  await expectProgressCurrent(page, 4);
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expectRsvpDisplayText(page, "犬");
+
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectVisibleSentenceText(page, "猫が走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 3);
+});
+
+test("ignores repeated transport keydown events", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "keyboard-repeat.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await expectRsvpDisplayText(page, "猫");
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+
+  await page.keyboard.press("ArrowDown");
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "犬");
+  await page.keyboard.press("ArrowDown");
+  await expectVisibleSentenceText(page, "鳥は空を見る。");
+  await expectRsvpDisplayText(page, "鳥");
+
+  await dispatchTransportKey(page, "ArrowLeft", false);
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
+
+  for (let repeatCount = 0; repeatCount < 4; repeatCount += 1) {
+    await dispatchTransportKey(page, "ArrowLeft", true);
+  }
+
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 6);
 });
 
 test("keeps Migaku-wrapped progress indicator synced while navigating and playing", async ({
@@ -344,7 +481,7 @@ test("keeps Migaku-wrapped progress indicator synced while navigating and playin
   await page.keyboard.press("ArrowRight");
   await expectRsvpDisplayText(page, "が");
   await expectProgressCurrent(page, 2);
-  await expect(page.locator(".reader-progress-value .migaku-token")).toHaveCount(0);
+  await expect(page.locator(".reader-progress-value--full .migaku-token")).toHaveCount(0);
 
   await wrapProgressWithMigakuMarkup(page);
   const previousProgress = await page.locator("progress").getAttribute("value");
@@ -352,7 +489,7 @@ test("keeps Migaku-wrapped progress indicator synced while navigating and playin
   await expect.poll(() => page.locator("progress").getAttribute("value")).not.toBe(previousProgress);
   const currentProgress = await page.locator("progress").getAttribute("value");
   const totalProgress = await page.locator("progress").getAttribute("max");
-  await expect(page.locator(".reader-progress-value")).toContainText(
+  await expect(page.locator(".reader-progress-value--full")).toContainText(
     `${currentProgress}/${totalProgress}`,
   );
 });
@@ -426,12 +563,6 @@ test("keeps active line stable across status underline changes", async ({ page }
   await expectActiveStatusUnderlineIsOverlay(page);
   await expectActiveTokenCentered(page);
   const unknownActiveMiddle = await activeTokenMiddle(page);
-  await expectStatusStripStableRow(page);
-  await page.addStyleTag({
-    content: ".status-strip.is-jittery span:first-child { font-size: 18px; line-height: normal; }",
-  });
-  await page.locator(".status-strip").evaluate((element) => element.classList.add("is-jittery"));
-  await expectStatusStripStableRow(page);
   await expectActiveTokenMiddleToMatch(page, unknownActiveMiddle);
 
   await page.getByRole("button", { name: "Next" }).click();
@@ -440,7 +571,6 @@ test("keeps active line stable across status underline changes", async ({ page }
   await expectVisibleRsvpTokensUseOnlyRsvpClasses(page);
   await expectActiveStatusUnderlineIsOverlay(page);
   await expectActiveTokenCentered(page);
-  await expectStatusStripStableRow(page);
   await expectActiveTokenMiddleToMatch(page, unknownActiveMiddle);
 });
 
@@ -630,7 +760,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "走る");
   await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
-  await expect(page.locator(".status-strip")).toContainText("Paused on stop rule");
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
   await expectActiveTokenHitTarget(page);
 
   await activeRsvpToken(page).click();
@@ -667,6 +797,198 @@ test("wraps stopped hover sentence context without moving the active token", asy
   await expectStoppedHoverContextOverlayReady(page);
 });
 
+test("scales long active text to stay inside the mobile viewport", async ({ page }, testInfo) => {
+  const activeText = "力ない男に張り付いたまま薄暗い部屋の奥まで歩いていった";
+  const longSentence = `${activeText}ところで足を止めた。`;
+  const epubPath = path.join(testInfo.outputDir, "mobile-long-active.epub");
+  await createSmallEpub(epubPath, [longSentence]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ fontSize: 96, chunkSize: 1 }));
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText(longSentence, {
+    timeout: 30_000,
+  });
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate(
+    (surface, values) => {
+      surface.innerHTML = `
+        <span class="migaku-token unknown" data-mgk-term="${values.activeText}" data-mgk-known-status="UNKNOWN" data-mgk-sentence="${values.activeText}">
+          <span class="migaku-surface">${values.activeText}</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="ところ" data-mgk-known-status="KNOWN" data-mgk-sentence="ところ">
+          <span class="migaku-surface">ところ</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="で" data-mgk-known-status="KNOWN" data-mgk-sentence="で">
+          <span class="migaku-surface">で</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="足" data-mgk-known-status="KNOWN" data-mgk-sentence="足">
+          <span class="migaku-surface">足</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="を" data-mgk-known-status="KNOWN" data-mgk-sentence="を">
+          <span class="migaku-surface">を</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="止めた" data-mgk-known-status="KNOWN" data-mgk-sentence="止めた">
+          <span class="migaku-surface">止めた</span>
+        </span>
+        <span>。</span>
+      `;
+    },
+    { activeText },
+  );
+
+  await expect(page.locator(".migaku-pill")).toContainText("parsed");
+  await expectRsvpDisplayText(page, activeText);
+  await expectActiveTokenCentered(page);
+  await expectVisibleRsvpTokensInsideDisplay(page);
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-sentence-track").evaluate((track) => {
+        const scale = getComputedStyle(track).getPropertyValue("--rsvp-track-scale");
+        return Number(scale);
+      }),
+    )
+    .toBeLessThan(1);
+});
+
+test("centers scaled long active groups away from the sentence middle", async ({
+  page,
+}, testInfo) => {
+  const activeText = "でもチェックアウトしなければ";
+  const sentence = `${activeText}ところで石神は死体に目を戻した。`;
+  const epubPath = path.join(testInfo.outputDir, "mobile-long-offset-active.epub");
+  await createSmallEpub(epubPath, [sentence]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ fontSize: 96, chunkSize: 1 }));
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText(sentence, {
+    timeout: 30_000,
+  });
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate(
+    (surface, values) => {
+      surface.innerHTML = `
+        <span class="migaku-token unknown" data-mgk-term="${values.activeText}" data-mgk-known-status="UNKNOWN" data-mgk-sentence="${values.activeText}">
+          <span class="migaku-surface">${values.activeText}</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="ところ" data-mgk-known-status="KNOWN" data-mgk-sentence="ところ">
+          <span class="migaku-surface">ところ</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="で" data-mgk-known-status="KNOWN" data-mgk-sentence="で">
+          <span class="migaku-surface">で</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="石神" data-mgk-known-status="KNOWN" data-mgk-sentence="石神">
+          <span class="migaku-surface">石神</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="は" data-mgk-known-status="KNOWN" data-mgk-sentence="は">
+          <span class="migaku-surface">は</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="死体" data-mgk-known-status="KNOWN" data-mgk-sentence="死体">
+          <span class="migaku-surface">死体</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="に" data-mgk-known-status="KNOWN" data-mgk-sentence="に">
+          <span class="migaku-surface">に</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="目" data-mgk-known-status="KNOWN" data-mgk-sentence="目">
+          <span class="migaku-surface">目</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="を" data-mgk-known-status="KNOWN" data-mgk-sentence="を">
+          <span class="migaku-surface">を</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="戻した" data-mgk-known-status="KNOWN" data-mgk-sentence="戻した">
+          <span class="migaku-surface">戻した</span>
+        </span>
+        <span>。</span>
+      `;
+    },
+    { activeText },
+  );
+
+  await expect(page.locator(".migaku-pill")).toContainText("parsed");
+  await expectRsvpDisplayText(page, activeText);
+  await expect(activeRsvpToken(page)).toHaveText(activeText);
+  await expectActiveTokenCentered(page);
+  await expectVisibleRsvpTokensInsideDisplay(page);
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-sentence-track").evaluate((track) => {
+        const scale = getComputedStyle(track).getPropertyValue("--rsvp-track-scale");
+        return Number(scale);
+      }),
+    )
+    .toBeLessThan(1);
+});
+
+test("keeps large progress labels on one line on mobile", async ({ page }, testInfo) => {
+  const paragraphs = Array.from({ length: 140 }, (_, index) =>
+    `長い進捗表示の確認文です${index}。さらに数を増やします。`,
+  );
+  const epubPath = path.join(testInfo.outputDir, "large-progress.epub");
+  await createSmallEpub(epubPath, paragraphs);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toBeVisible({ timeout: 30_000 });
+  await page.evaluate(() => {
+    const progressButton = document.querySelector<HTMLButtonElement>(".progress-jump-button");
+    if (!progressButton) {
+      throw new Error("Missing progress button.");
+    }
+    progressButton.setAttribute("aria-label", "Jump to location, current 9669 of 102203");
+    const full = progressButton.querySelector<HTMLElement>(".reader-progress-value--full");
+    const compact = progressButton.querySelector<HTMLElement>(".reader-progress-value--compact");
+    if (!full || !compact) {
+      throw new Error("Missing progress labels.");
+    }
+    full.textContent = "9% · 9669/102203";
+    compact.textContent = "9% · 9669";
+  });
+
+  await expect
+    .poll(() =>
+      page.locator(".progress-jump-button").evaluate((button) => ({
+        height: button.getBoundingClientRect().height,
+        scrollHeight: button.scrollHeight,
+        text: (button as HTMLElement).innerText.trim(),
+        compactVisible:
+          getComputedStyle(button.querySelector(".reader-progress-value--compact")!).display !==
+          "none",
+      })),
+    )
+    .toMatchObject({
+      text: "9% · 9669",
+      compactVisible: true,
+    });
+  await expect
+    .poll(() =>
+      page.locator(".progress-jump-button").evaluate((button) => {
+        const height = button.getBoundingClientRect().height;
+        return button.scrollHeight <= Math.ceil(height);
+      }),
+    )
+    .toBe(true);
+});
+
 async function setRangeValue(locator: Locator, value: string) {
   await locator.fill(value);
 }
@@ -678,11 +1000,28 @@ async function expectRsvpDisplayText(page: Page, text: string) {
 async function expectProgressCurrent(page: Page, current: number) {
   const total = await page.locator("progress").getAttribute("max");
   await expect(page.locator("progress")).toHaveAttribute("value", String(current));
-  await expect(page.locator(".reader-progress-value")).toContainText(`${current}/${total}`);
+  await expect(page.locator(".reader-progress-value--full")).toContainText(`${current}/${total}`);
+}
+
+async function dispatchTransportKey(page: Page, code: string, repeat: boolean) {
+  await page.evaluate(
+    ({ keyCode, repeated }) => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          code: keyCode,
+          key: keyCode,
+          repeat: repeated,
+        }),
+      );
+    },
+    { keyCode: code, repeated: repeat },
+  );
 }
 
 async function wrapProgressWithMigakuMarkup(page: Page) {
-  const progressValue = page.locator(".reader-progress-value");
+  const progressValue = page.locator(".reader-progress-value--full");
   const text = await progressValue.innerText();
 
   await progressValue.evaluate((element, currentText) => {
@@ -837,22 +1176,6 @@ async function expectVisibleRsvpTokensUseOnlyRsvpClasses(page: Page) {
     .toBe(true);
 }
 
-async function expectStatusStripStableRow(page: Page) {
-  await expect
-    .poll(() =>
-      page.locator(".status-strip").evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return {
-          height: rect.height,
-          lineHeight: style.lineHeight,
-          overflow: style.overflow,
-        };
-      }),
-    )
-    .toEqual({ height: 20, lineHeight: "20px", overflow: "hidden" });
-}
-
 async function expectActiveStatusUnderlineIsOverlay(page: Page) {
   await expect
     .poll(() =>
@@ -968,6 +1291,31 @@ async function expectActiveTokenCentered(page: Page) {
       }),
     )
     .toBeLessThanOrEqual(2);
+}
+
+async function expectVisibleRsvpTokensInsideDisplay(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display").evaluate((display) => {
+        const visibleTokens = Array.from(
+          display.querySelectorAll<HTMLElement>('[data-rsvp-visible-token="true"]'),
+        );
+        if (visibleTokens.length === 0) {
+          return false;
+        }
+
+        const displayRect = display.getBoundingClientRect();
+        const activeLeft = Math.min(
+          ...visibleTokens.map((element) => element.getBoundingClientRect().left),
+        );
+        const activeRight = Math.max(
+          ...visibleTokens.map((element) => element.getBoundingClientRect().right),
+        );
+
+        return activeLeft >= displayRect.left - 1 && activeRight <= displayRect.right + 1;
+      }),
+    )
+    .toBe(true);
 }
 
 function activeRsvpToken(page: Page) {

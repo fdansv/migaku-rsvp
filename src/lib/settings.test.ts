@@ -10,13 +10,13 @@ describe("settings persistence", () => {
   it("normalizes invalid values back to safe defaults", () => {
     expect(
       normalizeSettings({
-        wpm: 2_000,
+        stepDurationMs: 9_000,
         fontSize: 500,
         chunkSize: 99,
         stopMode: "unknown",
       }),
     ).toMatchObject({
-      wpm: 600,
+      stepDurationMs: 2_000,
       fontSize: 96,
       chunkSize: 4,
       stopMode: "unknown",
@@ -26,18 +26,16 @@ describe("settings persistence", () => {
   it("clamps lower bounds and rejects unknown select values", () => {
     expect(
       normalizeSettings({
-        wpm: 1,
+        stepDurationMs: 1,
         fontSize: 1,
         chunkSize: 0,
-        punctuationDelayMs: -10,
         stopMode: "sometimes" as never,
         theme: "sepia" as never,
       }),
     ).toMatchObject({
-      wpm: 80,
+      stepDurationMs: 100,
       fontSize: 36,
       chunkSize: 1,
-      punctuationDelayMs: 0,
       stopMode: DEFAULT_SETTINGS.stopMode,
       theme: DEFAULT_SETTINGS.theme,
     });
@@ -49,13 +47,18 @@ describe("settings persistence", () => {
   });
 
   it("loads saved settings from localStorage", () => {
-    saveSettings({ ...DEFAULT_SETTINGS, wpm: 500, stopMode: "never" });
-    expect(loadSettings()).toMatchObject({ wpm: 500, stopMode: "never" });
+    saveSettings({ ...DEFAULT_SETTINGS, stepDurationMs: 500, stopMode: "never" });
+    expect(loadSettings()).toMatchObject({ stepDurationMs: 500, stopMode: "never" });
   });
 
   it("rounds numeric settings before saving", () => {
-    saveSettings({ ...DEFAULT_SETTINGS, wpm: 150.6, fontSize: 63.2 });
-    expect(loadSettings()).toMatchObject({ wpm: 151, fontSize: 63 });
+    saveSettings({ ...DEFAULT_SETTINGS, stepDurationMs: 150.6, fontSize: 63.2 });
+    expect(loadSettings()).toMatchObject({ stepDurationMs: 151, fontSize: 63 });
+  });
+
+  it("migrates legacy WPM settings to step duration", () => {
+    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ wpm: 300 }));
+    expect(loadSettings()).toMatchObject({ stepDurationMs: 200 });
   });
 
   it("persists user-entered recap AI settings", () => {
