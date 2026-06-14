@@ -765,6 +765,81 @@ test("scales long active text to stay inside the mobile viewport", async ({ page
     .toBeLessThan(1);
 });
 
+test("centers scaled long active groups away from the sentence middle", async ({
+  page,
+}, testInfo) => {
+  const activeText = "でもチェックアウトしなければ";
+  const sentence = `${activeText}ところで石神は死体に目を戻した。`;
+  const epubPath = path.join(testInfo.outputDir, "mobile-long-offset-active.epub");
+  await createSmallEpub(epubPath, [sentence]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ fontSize: 96, chunkSize: 1 }));
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText(sentence, {
+    timeout: 30_000,
+  });
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate(
+    (surface, values) => {
+      surface.innerHTML = `
+        <span class="migaku-token unknown" data-mgk-term="${values.activeText}" data-mgk-known-status="UNKNOWN" data-mgk-sentence="${values.activeText}">
+          <span class="migaku-surface">${values.activeText}</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="ところ" data-mgk-known-status="KNOWN" data-mgk-sentence="ところ">
+          <span class="migaku-surface">ところ</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="で" data-mgk-known-status="KNOWN" data-mgk-sentence="で">
+          <span class="migaku-surface">で</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="石神" data-mgk-known-status="KNOWN" data-mgk-sentence="石神">
+          <span class="migaku-surface">石神</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="は" data-mgk-known-status="KNOWN" data-mgk-sentence="は">
+          <span class="migaku-surface">は</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="死体" data-mgk-known-status="KNOWN" data-mgk-sentence="死体">
+          <span class="migaku-surface">死体</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="に" data-mgk-known-status="KNOWN" data-mgk-sentence="に">
+          <span class="migaku-surface">に</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="目" data-mgk-known-status="KNOWN" data-mgk-sentence="目">
+          <span class="migaku-surface">目</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="を" data-mgk-known-status="KNOWN" data-mgk-sentence="を">
+          <span class="migaku-surface">を</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="戻した" data-mgk-known-status="KNOWN" data-mgk-sentence="戻した">
+          <span class="migaku-surface">戻した</span>
+        </span>
+        <span>。</span>
+      `;
+    },
+    { activeText },
+  );
+
+  await expect(page.locator(".migaku-pill")).toContainText("parsed");
+  await expectRsvpDisplayText(page, activeText);
+  await expect(activeRsvpToken(page)).toHaveText(activeText);
+  await expectActiveTokenCentered(page);
+  await expectVisibleRsvpTokensInsideDisplay(page);
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-sentence-track").evaluate((track) => {
+        const scale = getComputedStyle(track).getPropertyValue("--rsvp-track-scale");
+        return Number(scale);
+      }),
+    )
+    .toBeLessThan(1);
+});
+
 test("keeps large progress labels on one line on mobile", async ({ page }, testInfo) => {
   const paragraphs = Array.from({ length: 140 }, (_, index) =>
     `長い進捗表示の確認文です${index}。さらに数を増やします。`,
