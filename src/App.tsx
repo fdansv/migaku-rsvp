@@ -415,7 +415,6 @@ export function App() {
           migakuRootRef={migakuRootRef}
           fontSize={settings.fontSize}
           playing={playing}
-          autoPaused={autoPaused}
           recapStatus={recap.status}
           recapSummary={recap.summary}
           recapError={recap.error}

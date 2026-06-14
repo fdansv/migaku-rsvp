@@ -148,7 +148,6 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   });
 
   await expect(page.locator(".migaku-pill")).toContainText("parsed");
-  await expect(page.locator(".status-strip")).toContainText("unknown");
   await expectVisibleSentenceText(page, "猫が走る。");
   await expectRsvpDisplayText(page, "猫");
   await expect(activeRsvpToken(page)).toHaveText("猫");
@@ -189,7 +188,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
 
   await page.getByRole("button", { name: "Play" }).click();
-  await expect(page.locator(".status-strip")).toContainText("Paused on stop rule");
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 
   await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {
     surface.innerHTML = `
@@ -206,7 +205,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expectRsvpDisplayText(page, "走る。");
   await expect(activeRsvpToken(page)).toHaveText("走る");
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
-  await expect(page.locator(".status-strip")).toContainText("Paused on stop rule");
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 
   await page.getByRole("button", { name: "Next" }).click();
   await expectRsvpDisplayText(page, "犬");
@@ -489,12 +488,6 @@ test("keeps active line stable across status underline changes", async ({ page }
   await expectActiveStatusUnderlineIsOverlay(page);
   await expectActiveTokenCentered(page);
   const unknownActiveMiddle = await activeTokenMiddle(page);
-  await expectStatusStripStableRow(page);
-  await page.addStyleTag({
-    content: ".status-strip.is-jittery span:first-child { font-size: 18px; line-height: normal; }",
-  });
-  await page.locator(".status-strip").evaluate((element) => element.classList.add("is-jittery"));
-  await expectStatusStripStableRow(page);
   await expectActiveTokenMiddleToMatch(page, unknownActiveMiddle);
 
   await page.getByRole("button", { name: "Next" }).click();
@@ -503,7 +496,6 @@ test("keeps active line stable across status underline changes", async ({ page }
   await expectVisibleRsvpTokensUseOnlyRsvpClasses(page);
   await expectActiveStatusUnderlineIsOverlay(page);
   await expectActiveTokenCentered(page);
-  await expectStatusStripStableRow(page);
   await expectActiveTokenMiddleToMatch(page, unknownActiveMiddle);
 });
 
@@ -693,7 +685,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "走る");
   await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expect(activeRsvpToken(page)).toHaveClass(/unknown/);
-  await expect(page.locator(".status-strip")).toContainText("Paused on stop rule");
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
   await expectActiveTokenHitTarget(page);
 
   await activeRsvpToken(page).click();
@@ -958,22 +950,6 @@ async function expectVisibleRsvpTokensUseOnlyRsvpClasses(page: Page) {
       ),
     )
     .toBe(true);
-}
-
-async function expectStatusStripStableRow(page: Page) {
-  await expect
-    .poll(() =>
-      page.locator(".status-strip").evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return {
-          height: rect.height,
-          lineHeight: style.lineHeight,
-          overflow: style.overflow,
-        };
-      }),
-    )
-    .toEqual({ height: 20, lineHeight: "20px", overflow: "hidden" });
 }
 
 async function expectActiveStatusUnderlineIsOverlay(page: Page) {

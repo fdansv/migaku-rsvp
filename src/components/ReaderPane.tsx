@@ -35,7 +35,6 @@ interface ReaderPaneProps {
   migakuRootRef: RefObject<HTMLDivElement | null>;
   fontSize: number;
   playing: boolean;
-  autoPaused: boolean;
   recapStatus: "idle" | "loading" | "success" | "error";
   recapSummary: string;
   recapError: string;
@@ -63,7 +62,6 @@ export function ReaderPane({
   migakuRootRef,
   fontSize,
   playing,
-  autoPaused,
   recapStatus,
   recapSummary,
   recapError,
@@ -102,7 +100,6 @@ export function ReaderPane({
           .join("")
       : "";
   const showSentenceContext = !playing && sentenceContextHovered;
-  const activeStatus = getActiveStatus(displayTokenIndexes, migaku.statuses);
   const tokenRenderGroups = useMemo(
     () =>
       currentSentence
@@ -388,11 +385,6 @@ export function ReaderPane({
               activeSentenceId={currentSentence.id}
               sentences={bufferSentences}
             />
-          </div>
-
-          <div key={`status-${activeStatus}-${playing}-${autoPaused}`} className="status-strip">
-            <span>Token: {activeStatus}</span>
-            <span>{autoPaused ? "Paused on stop rule" : playing ? "Reading" : "Paused"}</span>
           </div>
 
           <div className="transport">
