@@ -21,6 +21,7 @@ import {
   retreatPosition,
   retreatSentencePosition,
   shouldStopForTokenIndexes,
+  type TokenGroupsBySentenceId,
 } from "./lib/rsvp";
 import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
@@ -85,6 +86,15 @@ export function App() {
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
   const playbackTimerRef = useRef<number | null>(null);
+  const playbackStepRef = useRef<{
+    sentences: Sentence[];
+    chunkSize: number;
+    tokenGroupsBySentenceId: TokenGroupsBySentenceId;
+  }>({
+    sentences: [],
+    chunkSize: settings.chunkSize,
+    tokenGroupsBySentenceId: {},
+  });
   const translationRequestsRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -179,6 +189,7 @@ export function App() {
         migakuTokenGroups,
       )
     : "";
+  const stepDelayMs = useMemo(() => getStepDelayMs(settings), [settings.stepDurationMs]);
   const activeKey = currentSentence ? `${currentSentence.id}:${safePosition.tokenIndex}` : "";
   const shouldStop =
     Boolean(currentSentence) &&
@@ -220,6 +231,14 @@ export function App() {
     setAutoPaused(false);
     setSkipStopKey(null);
   }, [activeKey]);
+
+  useEffect(() => {
+    playbackStepRef.current = {
+      sentences,
+      chunkSize: settings.chunkSize,
+      tokenGroupsBySentenceId,
+    };
+  }, [sentences, settings.chunkSize, tokenGroupsBySentenceId]);
 
   useEffect(() => {
     setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" });
@@ -329,11 +348,12 @@ export function App() {
         playbackTimerRef.current = null;
       }
       setPosition((previous) => {
+        const playbackStep = playbackStepRef.current;
         const next = advancePosition(
           previous,
-          sentences,
-          settings.chunkSize,
-          tokenGroupsBySentenceId,
+          playbackStep.sentences,
+          playbackStep.chunkSize,
+          playbackStep.tokenGroupsBySentenceId,
         );
         if (
           next.sentenceIndex === previous.sentenceIndex &&
@@ -343,7 +363,7 @@ export function App() {
         }
         return next;
       });
-    }, getStepDelayMs(settings));
+    }, stepDelayMs);
     playbackTimerRef.current = timer;
 
     return () => {
@@ -354,15 +374,12 @@ export function App() {
     };
   }, [
     activeKey,
-    currentSentence,
-    migaku.statuses,
+    currentSentence?.id,
     playing,
-    sentences,
-    settings,
     shouldStop,
     skipStopKey,
     setPosition,
-    tokenGroupsBySentenceId,
+    stepDelayMs,
   ]);
 
   useEffect(() => {
