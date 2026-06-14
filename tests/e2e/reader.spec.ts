@@ -794,7 +794,7 @@ test("keeps large progress labels on one line on mobile", async ({ page }, testI
       throw new Error("Missing progress labels.");
     }
     full.textContent = "9% · 9669/102203";
-    compact.textContent = "9669/102203";
+    compact.textContent = "9% · 9669";
   });
 
   await expect
@@ -809,7 +809,7 @@ test("keeps large progress labels on one line on mobile", async ({ page }, testI
       })),
     )
     .toMatchObject({
-      text: "9669/102203",
+      text: "9% · 9669",
       compactVisible: true,
     });
   await expect

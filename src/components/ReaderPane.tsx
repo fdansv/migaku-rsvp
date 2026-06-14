@@ -262,7 +262,7 @@ export function ReaderPane({
                     {progress.percent}% · {progress.current}/{progress.total}
                   </span>
                   <span className="reader-progress-value reader-progress-value--compact">
-                    {progress.current}/{progress.total}
+                    {progress.percent}% · {progress.current}
                   </span>
                 </button>
               )}
