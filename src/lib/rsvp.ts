@@ -443,7 +443,11 @@ function getNormalizedTokenGroups(sentence: Sentence, tokenGroups: TokenGroups =
       new Set(group.filter((tokenIndex) => wordLikeIndexes.has(tokenIndex))),
     ).sort((left, right) => left - right);
 
-    if (indexes.length === 0 || indexes.some((tokenIndex) => claimedIndexes.has(tokenIndex))) {
+    if (
+      indexes.length === 0 ||
+      (indexes.length === wordLikeIndexes.size && wordLikeIndexes.size > 1) ||
+      indexes.some((tokenIndex) => claimedIndexes.has(tokenIndex))
+    ) {
       continue;
     }
 

@@ -318,6 +318,22 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await page.getByRole("button", { name: "Next" }).click();
   await expectRsvpDisplayText(page, "も");
   await expectProgressCurrent(page, 5);
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").nth(1).evaluate((surface) => {
+    surface.innerHTML = `
+      <span class="migaku-token known" data-mgk-term="犬も走る" data-mgk-known-status="KNOWN" data-mgk-sentence="犬も走る">
+        <span class="migaku-surface">犬も走る</span>
+      </span>
+      <span>。</span>
+    `;
+  });
+  await expectRsvpDisplayText(page, "も");
+
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectRsvpDisplayText(page, "犬");
+  await expectProgressCurrent(page, 4);
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "も");
+  await expectProgressCurrent(page, 5);
 
   await page.keyboard.press("ArrowRight");
   await expectRsvpDisplayText(page, "走る。");
@@ -749,7 +765,8 @@ test("wraps stopped hover sentence context without moving the active token", asy
 });
 
 test("scales long active text to stay inside the mobile viewport", async ({ page }, testInfo) => {
-  const longSentence = "力ない男に張り付いたまま薄暗い部屋の奥まで歩いていった。";
+  const activeText = "力ない男に張り付いたまま薄暗い部屋の奥まで歩いていった";
+  const longSentence = `${activeText}ところで足を止めた。`;
   const epubPath = path.join(testInfo.outputDir, "mobile-long-active.epub");
   await createSmallEpub(epubPath, [longSentence]);
 
@@ -767,18 +784,34 @@ test("scales long active text to stay inside the mobile viewport", async ({ page
     timeout: 30_000,
   });
   await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate(
-    (surface, sentence) => {
+    (surface, values) => {
       surface.innerHTML = `
-        <span class="migaku-token unknown" data-mgk-term="${sentence}" data-mgk-known-status="UNKNOWN" data-mgk-sentence="${sentence}">
-          <span class="migaku-surface">${sentence}</span>
+        <span class="migaku-token unknown" data-mgk-term="${values.activeText}" data-mgk-known-status="UNKNOWN" data-mgk-sentence="${values.activeText}">
+          <span class="migaku-surface">${values.activeText}</span>
         </span>
+        <span class="migaku-token known" data-mgk-term="ところ" data-mgk-known-status="KNOWN" data-mgk-sentence="ところ">
+          <span class="migaku-surface">ところ</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="で" data-mgk-known-status="KNOWN" data-mgk-sentence="で">
+          <span class="migaku-surface">で</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="足" data-mgk-known-status="KNOWN" data-mgk-sentence="足">
+          <span class="migaku-surface">足</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="を" data-mgk-known-status="KNOWN" data-mgk-sentence="を">
+          <span class="migaku-surface">を</span>
+        </span>
+        <span class="migaku-token known" data-mgk-term="止めた" data-mgk-known-status="KNOWN" data-mgk-sentence="止めた">
+          <span class="migaku-surface">止めた</span>
+        </span>
+        <span>。</span>
       `;
     },
-    longSentence,
+    { activeText },
   );
 
   await expect(page.locator(".migaku-pill")).toContainText("parsed");
-  await expectRsvpDisplayText(page, longSentence);
+  await expectRsvpDisplayText(page, activeText);
   await expectActiveTokenCentered(page);
   await expectVisibleRsvpTokensInsideDisplay(page);
   await expect

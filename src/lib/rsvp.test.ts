@@ -112,6 +112,19 @@ describe("RSVP reader logic", () => {
     expect(getDisplayText(sentence, sentence.tokens.length - 1, 4)).toBe("走る。");
   });
 
+  it("ignores whole-sentence Migaku groups for step navigation", () => {
+    const wordIndexes = sentence.tokens.filter((token) => token.isWordLike).map((token) => token.index);
+    const sentences = [sentence, nextSentence];
+
+    expect(getDisplayText(sentence, wordIndexes[1], 1, [wordIndexes])).toBe("が");
+    expect(retreatPosition({ sentenceIndex: 0, tokenIndex: wordIndexes[2] }, sentences, 1, {
+      [sentence.id]: [wordIndexes],
+    })).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: wordIndexes[1],
+    });
+  });
+
   it("tracks progress by active token instead of sentence only", () => {
     const sentences = [sentence, nextSentence];
     const sentenceWordCount = sentence.tokens.filter((token) => token.isWordLike).length;
