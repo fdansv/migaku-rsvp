@@ -384,7 +384,10 @@ test("backs up from the playback position after manual steps", async ({ page }, 
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
-    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ stepDurationMs: 1000 }));
+    localStorage.setItem(
+      "migaku-rsvp:settings",
+      JSON.stringify({ stepDurationMs: 500, stopMode: "never" }),
+    );
     await indexedDB.deleteDatabase("migaku-rsvp");
   });
   await page.reload();
@@ -400,14 +403,15 @@ test("backs up from the playback position after manual steps", async ({ page }, 
   await expectProgressCurrent(page, 3);
 
   await page.getByRole("button", { name: "Play" }).click();
-  await expectProgressCurrent(page, 4);
+  await expectProgressCurrent(page, 6);
   await page.getByRole("button", { name: "Pause" }).click();
-  await expectRsvpDisplayText(page, "犬");
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "走る。");
 
   await page.getByRole("button", { name: "Previous" }).click();
-  await expectVisibleSentenceText(page, "猫が走る。");
-  await expectRsvpDisplayText(page, "走る。");
-  await expectProgressCurrent(page, 3);
+  await expectVisibleSentenceText(page, "犬も走る。");
+  await expectRsvpDisplayText(page, "も");
+  await expectProgressCurrent(page, 5);
 });
 
 test("ignores repeated transport keydown events", async ({ page }, testInfo) => {

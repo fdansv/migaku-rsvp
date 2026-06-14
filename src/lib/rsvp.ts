@@ -136,38 +136,7 @@ export function advancePosition(
   chunkSize: number,
   tokenGroupsBySentenceId: TokenGroupsBySentenceId = {},
 ): ReaderPosition {
-  if (sentences.length === 0) {
-    return position;
-  }
-
-  const current = clampPosition(position, sentences);
-  const sentence = sentences[current.sentenceIndex];
-  const tokenGroups = getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId);
-  const currentDisplay = getDisplayTokens(sentence, current.tokenIndex, chunkSize, tokenGroups);
-  const displayEndIndex = currentDisplay.at(-1)?.index ?? current.tokenIndex;
-  const nextTokenIndex = getStepUnits(sentence, tokenGroups).find(
-    (unit) => unit[0] > displayEndIndex,
-  )?.[0];
-
-  if (nextTokenIndex !== undefined) {
-    return { sentenceIndex: current.sentenceIndex, tokenIndex: nextTokenIndex };
-  }
-
-  if (current.sentenceIndex + 1 < sentences.length) {
-    const nextSentence = sentences[current.sentenceIndex + 1];
-    return {
-      sentenceIndex: current.sentenceIndex + 1,
-      tokenIndex: getFirstStepStart(
-        nextSentence,
-        getTokenGroupsForSentence(nextSentence, tokenGroupsBySentenceId),
-      ),
-    };
-  }
-
-  return {
-    sentenceIndex: current.sentenceIndex,
-    tokenIndex: normalizeStepStart(sentence, current.tokenIndex, tokenGroups),
-  };
+  return moveByStep(position, sentences, chunkSize, tokenGroupsBySentenceId, 1);
 }
 
 export function retreatPosition(
@@ -176,34 +145,7 @@ export function retreatPosition(
   chunkSize = 1,
   tokenGroupsBySentenceId: TokenGroupsBySentenceId = {},
 ): ReaderPosition {
-  if (sentences.length === 0) {
-    return position;
-  }
-
-  const current = clampPosition(position, sentences);
-  const sentence = sentences[current.sentenceIndex];
-  const tokenGroups = getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId);
-  const starts = getStepStarts(sentence, chunkSize, tokenGroups);
-  const currentStart = normalizeStepStart(sentence, current.tokenIndex, tokenGroups);
-  const startOffset = starts.indexOf(currentStart);
-
-  if (startOffset > 0) {
-    return { sentenceIndex: current.sentenceIndex, tokenIndex: starts[startOffset - 1] };
-  }
-
-  if (current.sentenceIndex > 0) {
-    const previousSentence = sentences[current.sentenceIndex - 1];
-    return {
-      sentenceIndex: current.sentenceIndex - 1,
-      tokenIndex: getLastStepStart(
-        previousSentence,
-        chunkSize,
-        getTokenGroupsForSentence(previousSentence, tokenGroupsBySentenceId),
-      ),
-    };
-  }
-
-  return { sentenceIndex: current.sentenceIndex, tokenIndex: currentStart };
+  return moveByStep(position, sentences, chunkSize, tokenGroupsBySentenceId, -1);
 }
 
 export function advanceSentencePosition(
@@ -390,13 +332,99 @@ function getStepStarts(sentence: Sentence, chunkSize: number, tokenGroups: Token
   return starts;
 }
 
-function getFirstStepStart(sentence: Sentence, tokenGroups: TokenGroups = []) {
-  return getStepStarts(sentence, 1, tokenGroups)[0] ?? 0;
+function moveByStep(
+  position: ReaderPosition,
+  sentences: Sentence[],
+  chunkSize: number,
+  tokenGroupsBySentenceId: TokenGroupsBySentenceId,
+  offset: -1 | 1,
+): ReaderPosition {
+  if (sentences.length === 0) {
+    return position;
+  }
+
+  const steps = getBookStepPositions(sentences, chunkSize, tokenGroupsBySentenceId);
+  if (steps.length === 0) {
+    return clampPosition(position, sentences);
+  }
+
+  const current = getCurrentStepPosition(position, sentences, chunkSize, tokenGroupsBySentenceId);
+  const currentStepIndex = steps.findIndex(
+    (step) => step.sentenceIndex === current.sentenceIndex && step.tokenIndex === current.tokenIndex,
+  );
+  const safeStepIndex = currentStepIndex >= 0 ? currentStepIndex : findNearestStepIndex(steps, current);
+  const nextStepIndex = Math.min(Math.max(safeStepIndex + offset, 0), steps.length - 1);
+
+  return steps[nextStepIndex] ?? current;
 }
 
-function getLastStepStart(sentence: Sentence, chunkSize: number, tokenGroups: TokenGroups = []) {
+function getBookStepPositions(
+  sentences: Sentence[],
+  chunkSize: number,
+  tokenGroupsBySentenceId: TokenGroupsBySentenceId,
+) {
+  return sentences.flatMap((sentence, sentenceIndex) =>
+    getStepStarts(sentence, chunkSize, getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId)).map(
+      (tokenIndex) => ({ sentenceIndex, tokenIndex }),
+    ),
+  );
+}
+
+function getCurrentStepPosition(
+  position: ReaderPosition,
+  sentences: Sentence[],
+  chunkSize: number,
+  tokenGroupsBySentenceId: TokenGroupsBySentenceId,
+) {
+  const current = clampPosition(position, sentences);
+  const sentence = sentences[current.sentenceIndex];
+  const tokenGroups = getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId);
+
+  return {
+    sentenceIndex: current.sentenceIndex,
+    tokenIndex: getStepStartForTokenIndex(sentence, current.tokenIndex, chunkSize, tokenGroups),
+  };
+}
+
+function getStepStartForTokenIndex(
+  sentence: Sentence,
+  tokenIndex: number,
+  chunkSize: number,
+  tokenGroups: TokenGroups = [],
+) {
   const starts = getStepStarts(sentence, chunkSize, tokenGroups);
-  return starts.at(-1) ?? 0;
+  if (starts.length === 0) {
+    return 0;
+  }
+
+  const normalizedStart = normalizeStepStart(sentence, tokenIndex, tokenGroups);
+  let stepStart = starts[0];
+  for (const start of starts) {
+    if (start > normalizedStart) {
+      break;
+    }
+    stepStart = start;
+  }
+
+  return stepStart;
+}
+
+function findNearestStepIndex(steps: ReaderPosition[], position: ReaderPosition) {
+  const nextStepIndex = steps.findIndex(
+    (step) =>
+      step.sentenceIndex > position.sentenceIndex ||
+      (step.sentenceIndex === position.sentenceIndex && step.tokenIndex >= position.tokenIndex),
+  );
+
+  if (nextStepIndex < 0) {
+    return steps.length - 1;
+  }
+
+  return nextStepIndex;
+}
+
+function getFirstStepStart(sentence: Sentence, tokenGroups: TokenGroups = []) {
+  return getStepStarts(sentence, 1, tokenGroups)[0] ?? 0;
 }
 
 function normalizeStepStart(sentence: Sentence, tokenIndex: number, tokenGroups: TokenGroups = []) {

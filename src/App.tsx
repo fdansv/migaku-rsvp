@@ -25,7 +25,7 @@ import {
 import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
 import { loadServerAiStatus } from "./lib/serverLibrary";
-import type { Book, ReaderPosition, ReaderSettings, Sentence } from "./types";
+import type { Book, ReaderSettings, Sentence } from "./types";
 
 const BUFFER_SENTENCES_BEHIND = 20;
 const BUFFER_SENTENCES_AHEAD = 100;
@@ -85,7 +85,6 @@ export function App() {
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
   const playbackTimerRef = useRef<number | null>(null);
-  const manualStepHistoryRef = useRef<ReaderPosition[]>([]);
   const translationRequestsRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -226,7 +225,6 @@ export function App() {
     setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" });
     setSentenceTranslations({});
     translationRequestsRef.current.clear();
-    manualStepHistoryRef.current = [];
   }, [selectedBookId]);
 
   useEffect(() => {
@@ -406,19 +404,16 @@ export function App() {
   });
 
   function handleImportFile(file: File) {
-    manualStepHistoryRef.current = [];
     stopPlayback();
     void importBook(file);
   }
 
   function handleSelectBook(book: Book) {
-    manualStepHistoryRef.current = [];
     stopPlayback();
     selectBook(book);
   }
 
   function handleRemoveBook(bookId: string) {
-    manualStepHistoryRef.current = [];
     stopPlayback();
     void removeBook(bookId);
   }
@@ -432,7 +427,6 @@ export function App() {
       return;
     }
 
-    manualStepHistoryRef.current = [];
     if (!playing && autoPaused && shouldStop) {
       setSkipStopKey(activeKey);
     }
@@ -446,51 +440,37 @@ export function App() {
   function goNext() {
     setAutoPaused(false);
     stopPlayback();
-    setPosition((previous) => {
-      const current = clampPosition(previous, sentences);
-      const next = advancePosition(current, sentences, settings.chunkSize, tokenGroupsBySentenceId);
-      if (!positionsEqual(current, next)) {
-        manualStepHistoryRef.current.push(current);
-      }
-      return next;
-    });
+    setPosition((previous) =>
+      advancePosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+    );
   }
 
   function goPrevious() {
     setAutoPaused(false);
     stopPlayback();
-    setPosition((previous) => {
-      const historical = manualStepHistoryRef.current.pop();
-      if (historical) {
-        return clampPosition(historical, sentences);
-      }
-
-      return retreatPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId);
-    });
+    setPosition((previous) =>
+      retreatPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+    );
   }
 
   function goNextSentence() {
-    manualStepHistoryRef.current = [];
     setAutoPaused(false);
     stopPlayback();
     setPosition((previous) => advanceSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
   function goPreviousSentence() {
-    manualStepHistoryRef.current = [];
     setAutoPaused(false);
     stopPlayback();
     setPosition((previous) => retreatSentencePosition(previous, sentences, tokenGroupsBySentenceId));
   }
 
   function beginProgressJump() {
-    manualStepHistoryRef.current = [];
     setAutoPaused(false);
     stopPlayback();
   }
 
   function jumpToProgressLocation(location: number) {
-    manualStepHistoryRef.current = [];
     setAutoPaused(false);
     stopPlayback();
     setPosition(getPositionForProgressUnit(location, sentences, settings.chunkSize));
@@ -593,10 +573,6 @@ export function App() {
       </div>
     </div>
   );
-}
-
-function positionsEqual(left: ReaderPosition, right: ReaderPosition) {
-  return left.sentenceIndex === right.sentenceIndex && left.tokenIndex === right.tokenIndex;
 }
 
 function getMigakuBufferWindow(

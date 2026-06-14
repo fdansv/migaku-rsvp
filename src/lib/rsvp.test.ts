@@ -58,6 +58,29 @@ describe("RSVP reader logic", () => {
     });
   });
 
+  it("moves forward and backward by one linear step", () => {
+    const sentences = [sentence, nextSentence];
+    const expectedPositions = [
+      { sentenceIndex: 0, tokenIndex: 0 },
+      { sentenceIndex: 0, tokenIndex: 1 },
+      { sentenceIndex: 0, tokenIndex: 2 },
+      { sentenceIndex: 1, tokenIndex: 0 },
+      { sentenceIndex: 1, tokenIndex: 1 },
+      { sentenceIndex: 1, tokenIndex: 2 },
+    ];
+
+    let current = expectedPositions[0];
+    for (const expectedPosition of expectedPositions.slice(1)) {
+      current = advancePosition(current, sentences, 1);
+      expect(current).toEqual(expectedPosition);
+    }
+
+    for (const expectedPosition of expectedPositions.slice(0, -1).reverse()) {
+      current = retreatPosition(current, sentences, 1);
+      expect(current).toEqual(expectedPosition);
+    }
+  });
+
   it("retreats by the same chunk size used for advancing", () => {
     const chunkedSentence = createSentence("の職場だった。", "chapter:0", 0, 0, 0) as Sentence;
     const sentences = [chunkedSentence];
@@ -65,6 +88,19 @@ describe("RSVP reader logic", () => {
     const afterRight = advancePosition(start, sentences, 2);
 
     expect(retreatPosition(afterRight, sentences, 2)).toEqual(start);
+  });
+
+  it("normalizes positions inside a chunk before stepping", () => {
+    const sentences = [sentence, nextSentence];
+
+    expect(retreatPosition({ sentenceIndex: 0, tokenIndex: 1 }, sentences, 2)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: 0,
+    });
+    expect(advancePosition({ sentenceIndex: 0, tokenIndex: 1 }, sentences, 2)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: 2,
+    });
   });
 
   it("retreats to the previous sentence's final full chunk", () => {
