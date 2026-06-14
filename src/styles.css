@@ -290,7 +290,10 @@ button {
 }
 
 .progress-jump-button {
-  width: 15ch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18ch;
   padding: 4px 6px;
   border: 0;
   border-radius: 6px;
@@ -298,6 +301,16 @@ button {
   color: var(--muted);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.reader-progress-value {
+  display: block;
+  min-width: 0;
+}
+
+.reader-progress-value--compact {
+  display: none;
 }
 
 .progress-jump-button:hover,
@@ -942,6 +955,19 @@ progress::-webkit-progress-value {
 
   .reader-progress {
     justify-content: center;
+  }
+
+  .progress-jump-button,
+  .progress-jump-form {
+    width: min(20ch, 100%);
+  }
+
+  .reader-progress-value--full {
+    display: none;
+  }
+
+  .reader-progress-value--compact {
+    display: block;
   }
 
   .rsvp-token-display {

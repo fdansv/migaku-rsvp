@@ -255,11 +255,14 @@ export function ReaderPane({
                   className="progress-jump-button"
                   type="button"
                   aria-label={`Jump to location, current ${progress.current} of ${progress.total}`}
-                  title="Jump to location"
+                  title={`${progress.percent}% · ${progress.current}/${progress.total}`}
                   onClick={beginProgressJump}
                 >
-                  <span className="reader-progress-value">
+                  <span className="reader-progress-value reader-progress-value--full">
                     {progress.percent}% · {progress.current}/{progress.total}
+                  </span>
+                  <span className="reader-progress-value reader-progress-value--compact">
+                    {progress.current}/{progress.total}
                   </span>
                 </button>
               )}

@@ -35,7 +35,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expectRsvpTokensHaveNoTransition(page);
   await expectActiveTokenCentered(page);
   const initialActiveMiddle = await activeTokenMiddle(page);
-  const progressLabel = page.locator(".reader-progress-value");
+  const progressLabel = page.locator(".reader-progress-value--full");
   const progressMeter = page.locator("progress");
   const initialProgressLabel = await progressLabel.innerText();
   const initialProgressValue = await progressMeter.getAttribute("value");
@@ -406,7 +406,7 @@ test("keeps Migaku-wrapped progress indicator synced while navigating and playin
   await page.keyboard.press("ArrowRight");
   await expectRsvpDisplayText(page, "が");
   await expectProgressCurrent(page, 2);
-  await expect(page.locator(".reader-progress-value .migaku-token")).toHaveCount(0);
+  await expect(page.locator(".reader-progress-value--full .migaku-token")).toHaveCount(0);
 
   await wrapProgressWithMigakuMarkup(page);
   const previousProgress = await page.locator("progress").getAttribute("value");
@@ -414,7 +414,7 @@ test("keeps Migaku-wrapped progress indicator synced while navigating and playin
   await expect.poll(() => page.locator("progress").getAttribute("value")).not.toBe(previousProgress);
   const currentProgress = await page.locator("progress").getAttribute("value");
   const totalProgress = await page.locator("progress").getAttribute("max");
-  await expect(page.locator(".reader-progress-value")).toContainText(
+  await expect(page.locator(".reader-progress-value--full")).toContainText(
     `${currentProgress}/${totalProgress}`,
   );
 });
@@ -765,6 +765,63 @@ test("scales long active text to stay inside the mobile viewport", async ({ page
     .toBeLessThan(1);
 });
 
+test("keeps large progress labels on one line on mobile", async ({ page }, testInfo) => {
+  const paragraphs = Array.from({ length: 140 }, (_, index) =>
+    `長い進捗表示の確認文です${index}。さらに数を増やします。`,
+  );
+  const epubPath = path.join(testInfo.outputDir, "large-progress.epub");
+  await createSmallEpub(epubPath, paragraphs);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toBeVisible({ timeout: 30_000 });
+  await page.evaluate(() => {
+    const progressButton = document.querySelector<HTMLButtonElement>(".progress-jump-button");
+    if (!progressButton) {
+      throw new Error("Missing progress button.");
+    }
+    progressButton.setAttribute("aria-label", "Jump to location, current 9669 of 102203");
+    const full = progressButton.querySelector<HTMLElement>(".reader-progress-value--full");
+    const compact = progressButton.querySelector<HTMLElement>(".reader-progress-value--compact");
+    if (!full || !compact) {
+      throw new Error("Missing progress labels.");
+    }
+    full.textContent = "9% · 9669/102203";
+    compact.textContent = "9669/102203";
+  });
+
+  await expect
+    .poll(() =>
+      page.locator(".progress-jump-button").evaluate((button) => ({
+        height: button.getBoundingClientRect().height,
+        scrollHeight: button.scrollHeight,
+        text: (button as HTMLElement).innerText.trim(),
+        compactVisible:
+          getComputedStyle(button.querySelector(".reader-progress-value--compact")!).display !==
+          "none",
+      })),
+    )
+    .toMatchObject({
+      text: "9669/102203",
+      compactVisible: true,
+    });
+  await expect
+    .poll(() =>
+      page.locator(".progress-jump-button").evaluate((button) => {
+        const height = button.getBoundingClientRect().height;
+        return button.scrollHeight <= Math.ceil(height);
+      }),
+    )
+    .toBe(true);
+});
+
 async function setRangeValue(locator: Locator, value: string) {
   await locator.fill(value);
 }
@@ -776,7 +833,7 @@ async function expectRsvpDisplayText(page: Page, text: string) {
 async function expectProgressCurrent(page: Page, current: number) {
   const total = await page.locator("progress").getAttribute("max");
   await expect(page.locator("progress")).toHaveAttribute("value", String(current));
-  await expect(page.locator(".reader-progress-value")).toContainText(`${current}/${total}`);
+  await expect(page.locator(".reader-progress-value--full")).toContainText(`${current}/${total}`);
 }
 
 async function dispatchTransportKey(page: Page, code: string, repeat: boolean) {
@@ -797,7 +854,7 @@ async function dispatchTransportKey(page: Page, code: string, repeat: boolean) {
 }
 
 async function wrapProgressWithMigakuMarkup(page: Page) {
-  const progressValue = page.locator(".reader-progress-value");
+  const progressValue = page.locator(".reader-progress-value--full");
   const text = await progressValue.innerText();
 
   await progressValue.evaluate((element, currentText) => {
