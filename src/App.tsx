@@ -299,6 +299,7 @@ export function App() {
       return;
     }
 
+    manualStepHistoryRef.current = [];
     if (!playing && autoPaused && shouldStop) {
       setSkipStopKey(activeKey);
     }

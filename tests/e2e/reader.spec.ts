@@ -377,6 +377,39 @@ test("uses vertical arrows for sentence jumps and horizontal arrows for token st
   await expectProgressCurrent(page, 1);
 });
 
+test("backs up from the playback position after manual steps", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "playback-back-history.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ stepDurationMs: 1000 }));
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "が");
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 3);
+
+  await page.getByRole("button", { name: "Play" }).click();
+  await expectProgressCurrent(page, 4);
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expectRsvpDisplayText(page, "犬");
+
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expectVisibleSentenceText(page, "猫が走る。");
+  await expectRsvpDisplayText(page, "走る。");
+  await expectProgressCurrent(page, 3);
+});
+
 test("ignores repeated transport keydown events", async ({ page }, testInfo) => {
   const epubPath = path.join(testInfo.outputDir, "keyboard-repeat.epub");
   await createSmallEpub(epubPath);
