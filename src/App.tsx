@@ -190,10 +190,18 @@ export function App() {
       displayTokenIndexes,
       migakuTokenGroups,
     );
+  const unknownWordUnitCount =
+    currentSentence && migaku.parsed
+      ? getUnknownWordUnitCount(currentSentence, migaku.statuses, migakuTokenGroups)
+      : 0;
   const shouldTranslateCurrentSentence =
-    currentSentence !== undefined &&
-    migaku.parsed &&
-    getUnknownWordUnitCount(currentSentence, migaku.statuses, migakuTokenGroups) > 1;
+    currentSentence !== undefined && migaku.parsed && unknownWordUnitCount > 1;
+  const sentenceDifficulty =
+    unknownWordUnitCount === 1
+      ? "i-plus-one"
+      : unknownWordUnitCount > 1
+        ? "beyond-i-plus-one"
+        : "none";
   const currentSentenceTranslation =
     currentSentence && shouldTranslateCurrentSentence
       ? sentenceTranslations[currentSentence.id]
@@ -565,6 +573,7 @@ export function App() {
           recapError={recap.error}
           recapSourceLabel={recap.sourceLabel}
           sentenceSubtitle={sentenceSubtitle}
+          sentenceDifficulty={sentenceDifficulty}
           onPrevious={goPrevious}
           onNext={goNext}
           onTogglePlayback={togglePlayback}

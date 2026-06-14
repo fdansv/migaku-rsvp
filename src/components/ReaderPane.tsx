@@ -40,6 +40,7 @@ interface ReaderPaneProps {
   recapError: string;
   recapSourceLabel: string;
   sentenceSubtitle: string;
+  sentenceDifficulty: "none" | "i-plus-one" | "beyond-i-plus-one";
   onPrevious: () => void;
   onNext: () => void;
   onTogglePlayback: () => void;
@@ -68,6 +69,7 @@ export function ReaderPane({
   recapError,
   recapSourceLabel,
   sentenceSubtitle,
+  sentenceDifficulty,
   onPrevious,
   onNext,
   onTogglePlayback,
@@ -325,6 +327,9 @@ export function ReaderPane({
                 "rsvp-token-display",
                 playing ? undefined : "rsvp-token-display--stopped",
                 showSentenceContext ? "rsvp-token-display--show-context" : undefined,
+                sentenceDifficulty !== "none"
+                  ? `rsvp-token-display--${sentenceDifficulty}`
+                  : undefined,
               ]
                 .filter(Boolean)
                 .join(" ")}
