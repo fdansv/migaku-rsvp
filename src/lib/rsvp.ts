@@ -170,6 +170,35 @@ export function advancePosition(
   };
 }
 
+export function advanceStepPosition(
+  position: ReaderPosition,
+  sentences: Sentence[],
+  chunkSize: number,
+  tokenGroupsBySentenceId: TokenGroupsBySentenceId = {},
+): ReaderPosition {
+  if (sentences.length === 0) {
+    return position;
+  }
+
+  const current = clampPosition(position, sentences);
+  const sentence = sentences[current.sentenceIndex];
+  const tokenGroups = getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId);
+  const currentDisplay = getDisplayTokens(sentence, current.tokenIndex, chunkSize, tokenGroups);
+  const displayEndIndex = currentDisplay.at(-1)?.index ?? current.tokenIndex;
+  const nextTokenIndex = getStepUnits(sentence, tokenGroups).find(
+    (unit) => unit[0] > displayEndIndex,
+  )?.[0];
+
+  if (nextTokenIndex !== undefined) {
+    return { sentenceIndex: current.sentenceIndex, tokenIndex: nextTokenIndex };
+  }
+
+  return {
+    sentenceIndex: current.sentenceIndex,
+    tokenIndex: normalizeStepStart(sentence, current.tokenIndex, tokenGroups),
+  };
+}
+
 export function retreatPosition(
   position: ReaderPosition,
   sentences: Sentence[],
@@ -201,6 +230,30 @@ export function retreatPosition(
         getTokenGroupsForSentence(previousSentence, tokenGroupsBySentenceId),
       ),
     };
+  }
+
+  return { sentenceIndex: current.sentenceIndex, tokenIndex: currentStart };
+}
+
+export function retreatStepPosition(
+  position: ReaderPosition,
+  sentences: Sentence[],
+  chunkSize = 1,
+  tokenGroupsBySentenceId: TokenGroupsBySentenceId = {},
+): ReaderPosition {
+  if (sentences.length === 0) {
+    return position;
+  }
+
+  const current = clampPosition(position, sentences);
+  const sentence = sentences[current.sentenceIndex];
+  const tokenGroups = getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId);
+  const starts = getStepStarts(sentence, chunkSize, tokenGroups);
+  const currentStart = normalizeStepStart(sentence, current.tokenIndex, tokenGroups);
+  const startOffset = starts.indexOf(currentStart);
+
+  if (startOffset > 0) {
+    return { sentenceIndex: current.sentenceIndex, tokenIndex: starts[startOffset - 1] };
   }
 
   return { sentenceIndex: current.sentenceIndex, tokenIndex: currentStart };

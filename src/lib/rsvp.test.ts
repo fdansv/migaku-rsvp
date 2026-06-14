@@ -5,6 +5,7 @@ import {
   DEFAULT_SETTINGS,
   advancePosition,
   advanceSentencePosition,
+  advanceStepPosition,
   clampPosition,
   flattenSentences,
   getDisplayText,
@@ -14,6 +15,7 @@ import {
   getStepDelayMs,
   retreatPosition,
   retreatSentencePosition,
+  retreatStepPosition,
   shouldStopForMode,
   shouldStopForTokenIndexes,
 } from "./rsvp";
@@ -54,6 +56,20 @@ describe("RSVP reader logic", () => {
     expect(retreatPosition({ sentenceIndex: 1, tokenIndex: 0 }, sentences)).toEqual({
       sentenceIndex: 0,
       tokenIndex: finalWordIndex,
+    });
+  });
+
+  it("keeps manual step movement inside the current sentence", () => {
+    const sentences = [sentence, nextSentence];
+    const endOfSentence = { sentenceIndex: 0, tokenIndex: sentence.tokens.length - 1 };
+
+    expect(advanceStepPosition(endOfSentence, sentences, 1)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: sentence.tokens.length - 2,
+    });
+    expect(retreatStepPosition({ sentenceIndex: 1, tokenIndex: 0 }, sentences)).toEqual({
+      sentenceIndex: 1,
+      tokenIndex: 0,
     });
   });
 

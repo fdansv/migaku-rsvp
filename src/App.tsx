@@ -10,6 +10,7 @@ import { useMigakuAdapter } from "./lib/migakuAdapter";
 import {
   advancePosition,
   advanceSentencePosition,
+  advanceStepPosition,
   clampPosition,
   flattenSentences,
   getDisplayText,
@@ -19,6 +20,7 @@ import {
   getStepDelayMs,
   retreatPosition,
   retreatSentencePosition,
+  retreatStepPosition,
   shouldStopForTokenIndexes,
 } from "./lib/rsvp";
 import { generateAiRecap, getRecapPages } from "./lib/recap";
@@ -308,7 +310,7 @@ export function App() {
     setAutoPaused(false);
     stopPlayback();
     setPosition((previous) =>
-      advancePosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+      advanceStepPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
     );
   }
 
@@ -316,7 +318,7 @@ export function App() {
     setAutoPaused(false);
     stopPlayback();
     setPosition((previous) =>
-      retreatPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+      retreatStepPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
     );
   }
 
