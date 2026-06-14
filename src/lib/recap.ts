@@ -4,6 +4,8 @@ export const RECAP_PAGE_LIMIT = 5;
 
 const MAX_RECAP_CONTEXT_CHARS = 16_000;
 const MAX_RECAP_TOKENS = 700;
+const MAX_TRANSLATION_TOKENS = 160;
+const TRANSLATION_MODEL = "gpt-5.4-nano";
 const REASONING_FALLBACK_TOKENS = 2_000;
 
 export interface RecapPage {
@@ -66,7 +68,6 @@ export async function generateAiRecap({
 }) {
   const apiUrl = settings.recapApiUrl.trim();
   const apiKey = settings.recapApiKey.trim();
-  const model = settings.recapModel.trim();
 
   if (!apiUrl || !apiKey) {
     throw new Error("Add an AI URL and API key in Settings.");
@@ -76,7 +77,8 @@ export async function generateAiRecap({
     throw new Error("No previous text is available to recap yet.");
   }
 
-  const basePayload: Record<string, unknown> = {
+  return generateAiText({
+    settings,
     messages: [
       {
         role: "system",
@@ -88,11 +90,71 @@ export async function generateAiRecap({
         content: buildRecapPrompt(bookTitle, pages),
       },
     ],
-    max_completion_tokens: MAX_RECAP_TOKENS,
-  };
+    maxTokens: MAX_RECAP_TOKENS,
+    emptyResponseError: "The AI response did not include a readable summary.",
+  });
+}
 
-  if (model) {
-    basePayload.model = model;
+export async function generateAiSentenceTranslation({
+  settings,
+  sentenceText,
+}: {
+  settings: Pick<ReaderSettings, "recapApiKey" | "recapApiUrl" | "recapModel">;
+  sentenceText: string;
+}) {
+  const text = sentenceText.trim();
+  if (!text) {
+    throw new Error("No sentence is available to translate.");
+  }
+
+  const translation = await generateAiText({
+    settings,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You translate Japanese sentences for an English-speaking reader. Return only the English translation with no labels, notes, markdown, or alternatives.",
+      },
+      {
+        role: "user",
+        content: buildSentenceTranslationPrompt(text),
+      },
+    ],
+    maxTokens: MAX_TRANSLATION_TOKENS,
+    model: TRANSLATION_MODEL,
+    reasoningEffort: "none",
+    emptyResponseError: "The AI response did not include a readable translation.",
+  });
+
+  return cleanSentenceTranslation(translation);
+}
+
+async function generateAiText({
+  settings,
+  messages,
+  maxTokens,
+  model,
+  reasoningEffort,
+  emptyResponseError,
+}: {
+  settings: Pick<ReaderSettings, "recapApiKey" | "recapApiUrl" | "recapModel">;
+  messages: Array<{ role: "system" | "user"; content: string }>;
+  maxTokens: number;
+  model?: string;
+  reasoningEffort?: "none" | "low";
+  emptyResponseError: string;
+}) {
+  const apiUrl = settings.recapApiUrl.trim();
+  const apiKey = settings.recapApiKey.trim();
+  const selectedModel = model ?? settings.recapModel.trim();
+
+  if (!apiUrl || !apiKey) {
+    throw new Error("Add an AI URL and API key in Settings.");
+  }
+
+  const basePayload: Record<string, unknown> = { messages };
+  if (selectedModel) {
+    basePayload.model = selectedModel;
   }
 
   async function post(payloadToSend: Record<string, unknown>) {
@@ -154,7 +216,7 @@ export async function generateAiRecap({
       delete payload.max_completion_tokens;
     }
     if (useReasoningEffort) {
-      payload.reasoning_effort = "low";
+      payload.reasoning_effort = reasoningEffort ?? "low";
     } else {
       delete payload.reasoning_effort;
     }
@@ -162,8 +224,8 @@ export async function generateAiRecap({
   };
 
   let useMaxCompletionTokens = true;
-  let maxCompletionTokens = MAX_RECAP_TOKENS;
-  let useReasoningEffort = false;
+  let maxCompletionTokens = maxTokens;
+  let useReasoningEffort = Boolean(reasoningEffort);
   const maxAttempts = 5;
   let didIncreaseTokens = false;
 
@@ -193,7 +255,7 @@ export async function generateAiRecap({
         continue;
       }
 
-      throw new Error("The AI response did not include a readable summary.");
+      throw new Error(emptyResponseError);
     } catch (error) {
       const parsedMessage = error instanceof Error ? error.message : "";
       const status = (error as Error & { status?: number }).status;
@@ -268,6 +330,15 @@ export function buildRecapPrompt(bookTitle: string, pages: RecapPage[]) {
     excerpts,
     "Write a concise recap in English. Keep names and important source-language terms as written.",
   ].join("\n\n");
+}
+
+export function buildSentenceTranslationPrompt(sentenceText: string) {
+  return [
+    "Translate this Japanese sentence into natural English.",
+    "Preserve names and do not explain grammar.",
+    "",
+    sentenceText,
+  ].join("\n");
 }
 
 export function extractSummaryFromResponse(bodyText: string) {
@@ -408,4 +479,12 @@ function textFromValue(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function cleanSentenceTranslation(value: string) {
+  return value
+    .trim()
+    .replace(/^["“](.*)["”]$/s, "$1")
+    .replace(/^(translation|english):\s*/i, "")
+    .trim();
 }

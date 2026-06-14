@@ -39,6 +39,7 @@ interface ReaderPaneProps {
   recapSummary: string;
   recapError: string;
   recapSourceLabel: string;
+  sentenceSubtitle: string;
   onPrevious: () => void;
   onNext: () => void;
   onTogglePlayback: () => void;
@@ -66,6 +67,7 @@ export function ReaderPane({
   recapSummary,
   recapError,
   recapSourceLabel,
+  sentenceSubtitle,
   onPrevious,
   onNext,
   onTogglePlayback,
@@ -388,6 +390,9 @@ export function ReaderPane({
                 </span>
               </span>
             </div>
+            <p className="sentence-subtitle" aria-live="polite">
+              {sentenceSubtitle}
+            </p>
             <MigakuSentenceSurface
               ref={migakuRootRef}
               activeSentenceId={currentSentence.id}

@@ -17,11 +17,12 @@ import {
   getPositionForProgressUnit,
   getProgressStats,
   getStepDelayMs,
+  getUnknownWordUnitCount,
   retreatPosition,
   retreatSentencePosition,
   shouldStopForTokenIndexes,
 } from "./lib/rsvp";
-import { generateAiRecap, getRecapPages } from "./lib/recap";
+import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
 import type { Book, ReaderPosition, ReaderSettings, Sentence } from "./types";
 
@@ -37,6 +38,14 @@ const TRANSPORT_KEY_CODES = new Set([
 ]);
 
 type RecapStatus = "idle" | "loading" | "success" | "error";
+type SentenceTranslationStatus = "loading" | "success" | "error";
+
+interface SentenceTranslation {
+  status: SentenceTranslationStatus;
+  text: string;
+  error: string;
+  sourceText: string;
+}
 
 export function App() {
   const {
@@ -68,10 +77,14 @@ export function App() {
     error: "",
     sourceLabel: "",
   });
+  const [sentenceTranslations, setSentenceTranslations] = useState<
+    Record<string, SentenceTranslation>
+  >({});
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
   const playbackTimerRef = useRef<number | null>(null);
   const manualStepHistoryRef = useRef<ReaderPosition[]>([]);
+  const translationRequestsRef = useRef(new Set<string>());
 
   useEffect(() => {
     saveSettings(settings);
@@ -149,6 +162,16 @@ export function App() {
       displayTokenIndexes,
       migakuTokenGroups,
     );
+  const shouldTranslateCurrentSentence =
+    currentSentence !== undefined &&
+    migaku.parsed &&
+    getUnknownWordUnitCount(currentSentence, migaku.statuses, migakuTokenGroups) > 1;
+  const currentSentenceTranslation =
+    currentSentence && shouldTranslateCurrentSentence
+      ? sentenceTranslations[currentSentence.id]
+      : undefined;
+  const sentenceSubtitle =
+    currentSentenceTranslation?.status === "success" ? currentSentenceTranslation.text : "";
   const { isFileDragActive, dragHandlers } = useFileDrop({
     disabled: isImporting,
     onFile: handleImportFile,
@@ -165,8 +188,80 @@ export function App() {
 
   useEffect(() => {
     setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" });
+    setSentenceTranslations({});
+    translationRequestsRef.current.clear();
     manualStepHistoryRef.current = [];
   }, [selectedBookId]);
+
+  useEffect(() => {
+    setSentenceTranslations({});
+    translationRequestsRef.current.clear();
+  }, [settings.recapApiUrl, settings.recapApiKey]);
+
+  useEffect(() => {
+    if (!currentSentence || !shouldTranslateCurrentSentence) {
+      return;
+    }
+    if (!settings.recapApiUrl.trim() || !settings.recapApiKey.trim()) {
+      return;
+    }
+
+    const sentenceId = currentSentence.id;
+    const sentenceText = currentSentence.text;
+    const cached = sentenceTranslations[sentenceId];
+    if (cached?.sourceText === sentenceText) {
+      return;
+    }
+    if (translationRequestsRef.current.has(sentenceId)) {
+      return;
+    }
+
+    translationRequestsRef.current.add(sentenceId);
+    setSentenceTranslations((previous) => ({
+      ...previous,
+      [sentenceId]: {
+        status: "loading",
+        text: "",
+        error: "",
+        sourceText: sentenceText,
+      },
+    }));
+
+    void generateAiSentenceTranslation({
+      settings,
+      sentenceText,
+    })
+      .then((translation) => {
+        setSentenceTranslations((previous) => ({
+          ...previous,
+          [sentenceId]: {
+            status: "success",
+            text: translation,
+            error: "",
+            sourceText: sentenceText,
+          },
+        }));
+      })
+      .catch((error) => {
+        setSentenceTranslations((previous) => ({
+          ...previous,
+          [sentenceId]: {
+            status: "error",
+            text: "",
+            error: error instanceof Error ? error.message : "Could not translate sentence.",
+            sourceText: sentenceText,
+          },
+        }));
+      })
+      .finally(() => {
+        translationRequestsRef.current.delete(sentenceId);
+      });
+  }, [
+    currentSentence,
+    sentenceTranslations,
+    settings,
+    shouldTranslateCurrentSentence,
+  ]);
 
   useEffect(() => {
     if (!selectedBookId || !currentSentence) {
@@ -439,6 +534,7 @@ export function App() {
           recapSummary={recap.summary}
           recapError={recap.error}
           recapSourceLabel={recap.sourceLabel}
+          sentenceSubtitle={sentenceSubtitle}
           onPrevious={goPrevious}
           onNext={goNext}
           onTogglePlayback={togglePlayback}

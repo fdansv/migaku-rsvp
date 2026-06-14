@@ -3,9 +3,11 @@ import type { Book, Chapter, ReaderSettings, Sentence } from "../types";
 import { createSentence } from "./text";
 import { DEFAULT_SETTINGS } from "./rsvp";
 import {
+  buildSentenceTranslationPrompt,
   buildRecapPrompt,
   extractSummaryFromResponse,
   generateAiRecap,
+  generateAiSentenceTranslation,
   getRecapPages,
 } from "./recap";
 
@@ -59,6 +61,14 @@ describe("recap helpers", () => {
     expect(prompt).not.toContain("Authorization");
   });
 
+  it("builds a sentence translation prompt without provider details", () => {
+    const prompt = buildSentenceTranslationPrompt("猫が走る。");
+
+    expect(prompt).toContain("猫が走る。");
+    expect(prompt).toContain("natural English");
+    expect(prompt).not.toContain("Authorization");
+  });
+
   it("extracts summaries from common AI response shapes", () => {
     expect(
       extractSummaryFromResponse(
@@ -105,6 +115,44 @@ describe("recap helpers", () => {
       max_completion_tokens: 700,
     });
     expect(JSON.parse(String(init?.body))).not.toHaveProperty("temperature");
+  });
+
+  it("posts an OpenAI-compatible sentence translation request", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '"The cat runs."' } }] }),
+        { status: 200 },
+      );
+    });
+    globalThis.fetch = fetchMock;
+
+    const settings: ReaderSettings = {
+      ...DEFAULT_SETTINGS,
+      recapApiUrl: "https://example.invalid/chat",
+      recapApiKey: "user-entered-key",
+      recapModel: "user-entered-model",
+    };
+
+    await expect(
+      generateAiSentenceTranslation({
+        settings,
+        sentenceText: "猫が走る。",
+      }),
+    ).resolves.toBe("The cat runs.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init?.headers).toMatchObject({
+      Authorization: "Bearer user-entered-key",
+      "Content-Type": "application/json",
+    });
+    const payload = JSON.parse(String(init?.body));
+    expect(payload).toMatchObject({
+      model: "gpt-5.4-nano",
+      max_completion_tokens: 160,
+      reasoning_effort: "none",
+    });
+    expect(payload.messages[1].content).toContain("猫が走る。");
   });
 
   it("switches to max_tokens when the model rejects max_completion_tokens", async () => {

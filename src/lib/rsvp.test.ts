@@ -12,6 +12,7 @@ import {
   getPositionForProgressUnit,
   getProgressStats,
   getStepDelayMs,
+  getUnknownWordUnitCount,
   retreatPosition,
   retreatSentencePosition,
   shouldStopForMode,
@@ -219,6 +220,13 @@ describe("RSVP reader logic", () => {
         tokenGroups,
       ),
     ).toBe(true);
+    expect(
+      getUnknownWordUnitCount(
+        sentence,
+        { [catIndex]: "unknown", [particleIndex]: "unknown" },
+        tokenGroups,
+      ),
+    ).toBe(1);
   });
 
   it("stops on unknown and i+1 tokens only when the active token qualifies", () => {

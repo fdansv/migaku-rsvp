@@ -576,6 +576,22 @@ button {
   opacity: 0.62;
 }
 
+.sentence-subtitle {
+  width: min(86vw, 680px);
+  min-height: 2.7em;
+  margin: calc(var(--reader-font-size, 64px) * 0.72) 0 0;
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+  font-size: clamp(0.95rem, 1.8vw, 1.18rem);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.sentence-subtitle:empty {
+  visibility: hidden;
+}
+
 .migaku-buffer-surface {
   position: absolute;
   inset-inline: 0;

@@ -307,6 +307,19 @@ export function shouldStopForTokenIndexes(
   );
 }
 
+export function getUnknownWordUnitCount(
+  sentence: Sentence,
+  statuses: Record<number, MigakuTokenStatus>,
+  tokenGroups: TokenGroups = [],
+) {
+  return getUnknownWordUnitKeys(
+    sentence,
+    statuses,
+    sentence.tokens.map((token) => token.index),
+    tokenGroups,
+  ).size;
+}
+
 export function getTokenRenderGroups(sentence: Sentence, tokenGroups: TokenGroups = []) {
   const normalizedGroups = getNormalizedTokenGroups(sentence, tokenGroups);
   const groupRangesByStart = new Map(
