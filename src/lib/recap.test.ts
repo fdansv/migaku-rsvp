@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe("recap helpers", () => {
-  it("collects up to five prior readable pages in reading order", () => {
+  it("collects up to three prior readable pages in reading order", () => {
     const book = makeBook([
       ["一ページ目。"],
       ["二ページ目。"],
@@ -31,8 +31,6 @@ describe("recap helpers", () => {
     const currentSentence = book.chapters[5].sentences[1];
 
     expect(getRecapPages(book, currentSentence).map((page) => page.text)).toEqual([
-      "二ページ目。",
-      "三ページ目。",
       "四ページ目。",
       "五ページ目。",
       "六ページ目の前半。",
@@ -58,6 +56,8 @@ describe("recap helpers", () => {
 
     expect(prompt).toContain("Book: 本");
     expect(prompt).toContain("猫が走る。");
+    expect(prompt).toContain("no more than three short paragraphs");
+    expect(prompt).toContain("120 words or fewer");
     expect(prompt).not.toContain("Authorization");
   });
 
@@ -112,7 +112,7 @@ describe("recap helpers", () => {
     });
     expect(JSON.parse(String(init?.body))).toMatchObject({
       model: "user-entered-model",
-      max_completion_tokens: 700,
+      max_completion_tokens: 320,
     });
     expect(JSON.parse(String(init?.body))).not.toHaveProperty("temperature");
   });
@@ -222,10 +222,10 @@ describe("recap helpers", () => {
     const [, firstInit] = fetchMock.mock.calls[0];
     const [, secondInit] = fetchMock.mock.calls[1];
     expect(JSON.parse(String(firstInit?.body))).toMatchObject({
-      max_completion_tokens: 700,
+      max_completion_tokens: 320,
     });
     expect(JSON.parse(String(secondInit?.body))).toMatchObject({
-      max_tokens: 700,
+      max_tokens: 320,
     });
     expect(JSON.parse(String(secondInit?.body))).not.toHaveProperty("max_completion_tokens");
   });
@@ -252,11 +252,11 @@ describe("recap helpers", () => {
               },
             ],
             usage: {
-              completion_tokens: 700,
+              completion_tokens: 320,
               prompt_tokens: 985,
-              total_tokens: 1685,
+              total_tokens: 1305,
               completion_tokens_details: {
-                reasoning_tokens: 700,
+                reasoning_tokens: 320,
               },
             },
           }),
@@ -289,7 +289,7 @@ describe("recap helpers", () => {
     const [, firstInit] = fetchMock.mock.calls[0];
     const [, secondInit] = fetchMock.mock.calls[1];
     expect(JSON.parse(String(firstInit?.body))).toMatchObject({
-      max_completion_tokens: 700,
+      max_completion_tokens: 320,
     });
     expect(JSON.parse(String(firstInit?.body))).not.toHaveProperty("reasoning_effort");
     expect(JSON.parse(String(secondInit?.body))).toMatchObject({
@@ -329,7 +329,7 @@ describe("recap helpers", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, firstInit] = fetchMock.mock.calls[0];
     expect(JSON.parse(String(firstInit?.body))).toMatchObject({
-      max_completion_tokens: 700,
+      max_completion_tokens: 320,
     });
     expect(JSON.parse(String(firstInit?.body))).not.toHaveProperty("max_tokens");
   });

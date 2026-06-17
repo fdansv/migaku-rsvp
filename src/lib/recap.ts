@@ -1,9 +1,9 @@
 import type { Book, ReaderSettings, Sentence } from "../types";
 
-export const RECAP_PAGE_LIMIT = 5;
+export const RECAP_PAGE_LIMIT = 3;
 
-const MAX_RECAP_CONTEXT_CHARS = 16_000;
-const MAX_RECAP_TOKENS = 700;
+const MAX_RECAP_CONTEXT_CHARS = 8_000;
+const MAX_RECAP_TOKENS = 320;
 const MAX_TRANSLATION_TOKENS = 160;
 const TRANSLATION_MODEL = "gpt-5.4-nano";
 const REASONING_FALLBACK_TOKENS = 2_000;
@@ -329,7 +329,8 @@ export function buildRecapPrompt(bookTitle: string, pages: RecapPage[]) {
     `Book: ${bookTitle}`,
     "Previous reading context:",
     excerpts,
-    "Write a concise recap in English. Keep names and important source-language terms as written.",
+    "Write a concise recap in English, using no more than three short paragraphs and no bullet points.",
+    "Aim for 120 words or fewer. Keep names and important source-language terms as written.",
   ].join("\n\n");
 }
 
