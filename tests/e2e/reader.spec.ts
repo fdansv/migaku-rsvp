@@ -993,6 +993,94 @@ test("keeps large progress labels on one line on mobile", async ({ page }, testI
     .toBe(true);
 });
 
+test("keeps desktop progress location control from shifting reader text", async ({
+  page,
+}, testInfo) => {
+  const paragraphs = Array.from({ length: 140 }, (_, index) =>
+    `長い進捗表示の確認文です${index}。さらに数を増やします。`,
+  );
+  const epubPath = path.join(testInfo.outputDir, "desktop-large-progress.epub");
+  await createSmallEpub(epubPath, paragraphs);
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toBeVisible({ timeout: 30_000 });
+  const initialDisplayTop = await page
+    .locator(".rsvp-token-display")
+    .evaluate((display) => display.getBoundingClientRect().top);
+
+  await page.addStyleTag({
+    content: `
+      .reader-progress-value--full .migaku-token,
+      .reader-progress-value--full .migaku-fragment,
+      .reader-progress-value--full .migaku-surface {
+        display: block;
+      }
+    `,
+  });
+  await page.evaluate(() => {
+    const progressButton = document.querySelector<HTMLButtonElement>(".progress-jump-button");
+    if (!progressButton) {
+      throw new Error("Missing progress button.");
+    }
+    progressButton.setAttribute("aria-label", "Jump to location, current 99999 of 100000");
+    const full = progressButton.querySelector<HTMLElement>(".reader-progress-value--full");
+    const compact = progressButton.querySelector<HTMLElement>(".reader-progress-value--compact");
+    if (!full || !compact) {
+      throw new Error("Missing progress labels.");
+    }
+    full.innerHTML = `
+      <span class="migaku-token -mgk-blacklisted -mgk-no-readings">
+        <span class="migaku-fragment -mgk-content">
+          <span class="migaku-surface">100% · 99999/100000</span>
+          <span class="migaku-spacer" aria-hidden="true">\u200b</span>
+        </span>
+      </span>
+    `;
+    compact.textContent = "100% · 99999";
+  });
+
+  await expect(page.locator(".reader-progress-value--full .migaku-surface")).toHaveText(
+    "100% · 99999/100000",
+  );
+  await expect
+    .poll(() =>
+      page.locator(".progress-jump-button").evaluate((button) => {
+        const height = button.getBoundingClientRect().height;
+        const full = button.querySelector(".reader-progress-value--full");
+        return {
+          compactVisible:
+            getComputedStyle(button.querySelector(".reader-progress-value--compact")!).display !==
+            "none",
+          fullVisible: full ? getComputedStyle(full).display !== "none" : false,
+          oneLine: button.scrollHeight <= Math.ceil(height),
+        };
+      }),
+    )
+    .toMatchObject({
+      compactVisible: false,
+      fullVisible: true,
+      oneLine: true,
+    });
+  await expect
+    .poll(() =>
+      page
+        .locator(".rsvp-token-display")
+        .evaluate(
+          (display, expectedTop) => Math.abs(display.getBoundingClientRect().top - expectedTop),
+          initialDisplayTop,
+        ),
+    )
+    .toBeLessThan(1);
+});
+
 async function setRangeValue(locator: Locator, value: string) {
   await locator.fill(value);
 }

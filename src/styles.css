@@ -283,9 +283,11 @@ button {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 10px;
   min-height: 32px;
+  min-width: 0;
   white-space: nowrap;
 }
 
@@ -294,6 +296,8 @@ button {
   align-items: center;
   justify-content: center;
   width: 18ch;
+  height: 32px;
+  min-width: 0;
   padding: 4px 6px;
   border: 0;
   border-radius: 6px;
@@ -301,12 +305,20 @@ button {
   color: var(--muted);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+  overflow: hidden;
   white-space: nowrap;
 }
 
 .reader-progress-value {
   display: block;
+  max-width: 100%;
   min-width: 0;
+}
+
+.reader-progress-value :where(.migaku-token, .migaku-fragment, .migaku-surface, .migaku-spacer) {
+  display: inline !important;
+  white-space: inherit !important;
 }
 
 .reader-progress-value--compact {
@@ -325,7 +337,9 @@ button {
   align-items: center;
   gap: 4px;
   width: 15ch;
+  height: 32px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .progress-jump-input {
