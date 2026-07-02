@@ -1,5 +1,7 @@
 export type StopMode = "unknown" | "never" | "i+1";
 
+export type StepGroupingMode = "words" | "characters";
+
 export type ThemeMode = "paper" | "dark" | "contrast";
 
 export type MigakuTokenStatus =
@@ -41,6 +43,7 @@ export interface Chapter {
 export interface ReaderPosition {
   sentenceIndex: number;
   tokenIndex: number;
+  characterOffset?: number;
 }
 
 export interface Book {
@@ -56,9 +59,11 @@ export interface Book {
 }
 
 export interface ReaderSettings {
-  stepDurationMs: number;
+  stepsPerMinute: number;
   fontSize: number;
+  stepGroupingMode: StepGroupingMode;
   chunkSize: number;
+  characterChunkSize: number;
   stopMode: StopMode;
   theme: ThemeMode;
   recapApiUrl: string;

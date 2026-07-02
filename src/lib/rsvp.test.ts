@@ -149,6 +149,29 @@ describe("RSVP reader logic", () => {
     expect(getDisplayText(sentence, sentence.tokens.length - 1, 4)).toBe("走る。");
   });
 
+  it("groups display text by character count and can split inside a token", () => {
+    const characterConfig = { mode: "characters" as const, wordCount: 1, characterCount: 3 };
+    const runIndex = sentence.tokens.find((token) => token.text.includes("走る"))?.index ?? 0;
+
+    expect(getDisplayText(sentence, { tokenIndex: 0, characterOffset: 0 }, characterConfig)).toBe(
+      "猫が走",
+    );
+    expect(
+      getDisplayText(sentence, { tokenIndex: runIndex, characterOffset: 3 }, characterConfig),
+    ).toBe("る。");
+  });
+
+  it("moves forward and backward by character groups", () => {
+    const characterConfig = { mode: "characters" as const, wordCount: 1, characterCount: 3 };
+    const sentences = [sentence];
+    const runIndex = sentence.tokens.find((token) => token.text.includes("走る"))?.index ?? 0;
+    const start = { sentenceIndex: 0, tokenIndex: 0, characterOffset: 0 };
+    const next = advancePosition(start, sentences, characterConfig);
+
+    expect(next).toEqual({ sentenceIndex: 0, tokenIndex: runIndex, characterOffset: 3 });
+    expect(retreatPosition(next, sentences, characterConfig)).toEqual(start);
+  });
+
   it("ignores whole-sentence Migaku groups for step navigation", () => {
     const wordIndexes = sentence.tokens.filter((token) => token.isWordLike).map((token) => token.index);
     const sentences = [sentence, nextSentence];
@@ -216,10 +239,26 @@ describe("RSVP reader logic", () => {
     });
   });
 
-  it("uses a constant step delay from settings", () => {
-    const settings = { ...DEFAULT_SETTINGS, stepDurationMs: 550 };
+  it("maps character progress locations to the visible character group containing them", () => {
+    const characterConfig = { mode: "characters" as const, wordCount: 1, characterCount: 3 };
+    const runIndex = sentence.tokens.find((token) => token.text.includes("走る"))?.index ?? 0;
 
-    expect(getStepDelayMs(settings)).toBe(550);
+    expect(getProgressStats({ sentenceIndex: 0, tokenIndex: 0 }, [sentence], characterConfig)).toEqual({
+      current: 3,
+      total: 5,
+      percent: 60,
+    });
+    expect(getPositionForProgressUnit(4, [sentence], characterConfig)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: runIndex,
+      characterOffset: 3,
+    });
+  });
+
+  it("derives step delay from steps per minute", () => {
+    const settings = { ...DEFAULT_SETTINGS, stepsPerMinute: 120 };
+
+    expect(getStepDelayMs(settings)).toBe(500);
   });
 
   it("uses Migaku token groups as display and navigation boundaries", () => {

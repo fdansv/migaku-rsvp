@@ -14,7 +14,7 @@ import type {
   MigakuTokenStatus,
   Sentence,
 } from "../types";
-import { getTokenRenderGroups } from "../lib/rsvp";
+import { getDisplayRenderSegments } from "../lib/rsvp";
 import { MigakuSentenceSurface } from "./MigakuSentenceSurface";
 
 interface ReaderPaneProps {
@@ -27,6 +27,10 @@ interface ReaderPaneProps {
     percent: number;
   };
   displayText: string;
+  displayRange: {
+    startOffset: number;
+    endOffset: number;
+  };
   displayTokenIndexes: number[];
   displayTokenKey: string;
   bufferSentences: Sentence[];
@@ -56,6 +60,7 @@ export function ReaderPane({
   currentSentence,
   progress,
   displayText,
+  displayRange,
   displayTokenIndexes,
   displayTokenKey,
   bufferSentences,
@@ -86,31 +91,25 @@ export function ReaderPane({
   const [progressInput, setProgressInput] = useState("");
   const [progressInputInvalid, setProgressInputInvalid] = useState(false);
   const displayTokenIndexSet = useMemo(() => new Set(displayTokenIndexes), [displayTokenIndexes]);
-  const displayStartTokenIndex =
-    displayTokenIndexes.length > 0 ? Math.min(...displayTokenIndexes) : -1;
-  const displayEndTokenIndex =
-    displayTokenIndexes.length > 0 ? Math.max(...displayTokenIndexes) : -1;
   const sentenceContextBefore =
-    currentSentence && displayStartTokenIndex > 0
-      ? currentSentence.tokens
-          .slice(0, displayStartTokenIndex)
-          .map((token) => token.text)
-          .join("")
+    currentSentence && displayRange.startOffset > 0
+      ? currentSentence.text.slice(0, displayRange.startOffset)
       : "";
   const sentenceContextAfter =
-    currentSentence && displayEndTokenIndex >= 0
-      ? currentSentence.tokens
-          .slice(displayEndTokenIndex + 1)
-          .map((token) => token.text)
-          .join("")
+    currentSentence && displayRange.endOffset < currentSentence.text.length
+      ? currentSentence.text.slice(displayRange.endOffset)
       : "";
   const showSentenceContext = !playing && sentenceContextHovered;
-  const tokenRenderGroups = useMemo(
+  const displayRenderSegments = useMemo(
     () =>
       currentSentence
-        ? getTokenRenderGroups(currentSentence, migaku.parsed ? migaku.tokenGroups : [])
+        ? getDisplayRenderSegments(
+            currentSentence,
+            displayRange,
+            migaku.parsed ? migaku.tokenGroups : [],
+          )
         : [],
-    [currentSentence, migaku.parsed, migaku.tokenGroups],
+    [currentSentence, displayRange, migaku.parsed, migaku.tokenGroups],
   );
 
   useLayoutEffect(() => {
@@ -143,13 +142,8 @@ export function ReaderPane({
         return;
       }
 
-      const activeIndexSet = new Set(displayTokenIndexes.map(String));
       const activeElements = Array.from(
-        scaleElement.querySelectorAll<HTMLElement>("[data-rsvp-display-token-index]"),
-      ).filter((element) =>
-        splitTokenIndexes(element.getAttribute("data-rsvp-display-token-index")).some(
-          (tokenIndex) => activeIndexSet.has(tokenIndex),
-        ),
+        scaleElement.querySelectorAll<HTMLElement>('[data-rsvp-visible-token="true"]'),
       );
 
       if (activeElements.length === 0) {
@@ -262,11 +256,15 @@ export function ReaderPane({
                   title={`${progress.percent}% · ${progress.current}/${progress.total}`}
                   onClick={beginProgressJump}
                 >
-                  <span className="reader-progress-value reader-progress-value--full">
-                    {progress.percent}% · {progress.current}/{progress.total}
+                  <span className="reader-progress-value reader-progress-value--full reader-progress-value--percent">
+                    {progress.percent}%
                   </span>
-                  <span className="reader-progress-value reader-progress-value--compact">
-                    {progress.percent}% · {progress.current}
+                  <span
+                    className="reader-progress-value reader-progress-value--location"
+                    aria-hidden="true"
+                  >
+                    {" "}
+                    · {progress.current}/{progress.total}
                   </span>
                 </button>
               )}
@@ -354,20 +352,18 @@ export function ReaderPane({
                 data-mgk-sentence={currentSentence.text}
               >
                 <span ref={sentenceScaleRef} className="rsvp-sentence-scale">
-                  {tokenRenderGroups.map((tokens) => {
-                    const tokenIndexes = tokens.map((token) => token.index);
-                    const tokenIndexValue = tokenIndexes.join(",");
-                    const tokenStatus = getActiveStatus(tokenIndexes, migaku.statuses);
-                    const mirror = getGroupMirror(tokenIndexes, migaku.mirrors, tokenStatus);
+                  {displayRenderSegments.map((segment) => {
+                    const tokenIndexValue = segment.tokenIndexes.join(",");
+                    const tokenStatus = getActiveStatus(segment.tokenIndexes, migaku.statuses);
+                    const mirror = getGroupMirror(segment.tokenIndexes, migaku.mirrors, tokenStatus);
                     const mirrorAttributes = mirror ? reactDataAttributes(mirror.attributes) : {};
-                    const isDisplayToken = tokenIndexes.some((tokenIndex) =>
+                    const isDisplayToken = segment.isDisplay && segment.tokenIndexes.some((tokenIndex) =>
                       displayTokenIndexSet.has(tokenIndex),
                     );
-                    const isWordLike = tokens.some((token) => token.isWordLike);
 
                     return (
                       <span
-                        key={tokens.map((token) => token.id).join(",")}
+                        key={segment.key}
                         className={[
                           "rsvp-display-token",
                           isDisplayToken
@@ -383,12 +379,12 @@ export function ReaderPane({
                         data-rsvp-display-token-index={tokenIndexValue}
                         data-rsvp-visible-token={isDisplayToken ? "true" : undefined}
                         data-rsvp-visible-word={
-                          isDisplayToken && isWordLike ? "true" : undefined
+                          isDisplayToken && segment.isWordLike ? "true" : undefined
                         }
                         {...mirrorAttributes}
                         data-mgk-sentence={currentSentence.text}
                       >
-                        {tokens.map((token) => token.text).join("")}
+                        {segment.text}
                       </span>
                     );
                   })}
@@ -505,8 +501,4 @@ function getGroupMirror(
     .filter((mirror): mirror is MigakuTokenMirror => Boolean(mirror));
 
   return groupMirrors.find((mirror) => mirror.status === status) ?? groupMirrors[0];
-}
-
-function splitTokenIndexes(value: string | null) {
-  return value?.split(",").filter(Boolean) ?? [];
 }

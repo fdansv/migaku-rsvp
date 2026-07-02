@@ -5,7 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import type { ReaderSettings, StopMode, ThemeMode } from "../types";
+import type { ReaderSettings, StepGroupingMode, StopMode, ThemeMode } from "../types";
 
 interface SettingsPanelProps {
   settings: ReaderSettings;
@@ -36,6 +36,11 @@ const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
   { value: "contrast", label: "Contrast" },
 ];
 
+const STEP_GROUPING_OPTIONS: Array<{ value: StepGroupingMode; label: string }> = [
+  { value: "words", label: "Words" },
+  { value: "characters", label: "Characters" },
+];
+
 export function SettingsPanel({ settings, isOpen, onToggle, onChange }: SettingsPanelProps) {
   return (
     <aside className={`settings${isOpen ? "" : " is-collapsed"}`} aria-label="Reader settings">
@@ -53,14 +58,29 @@ export function SettingsPanel({ settings, isOpen, onToggle, onChange }: Settings
       {isOpen ? (
         <div className="settings-body">
           <RangeSetting
-            label="Step time"
-            min={100}
-            max={2000}
-            step={50}
-            value={settings.stepDurationMs}
-            format={formatStepDuration}
-            onValue={(value) => onChange({ stepDurationMs: value })}
+            label="Steps/min"
+            min={80}
+            max={300}
+            step={1}
+            value={settings.stepsPerMinute}
+            format={(value) => String(value)}
+            onValue={(value) => onChange({ stepsPerMinute: value })}
           />
+          <label>
+            Group by
+            <select
+              value={settings.stepGroupingMode}
+              onChange={(event) =>
+                onChange({ stepGroupingMode: event.currentTarget.value as StepGroupingMode })
+              }
+            >
+              {STEP_GROUPING_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <RangeSetting
             label="Font"
             min={36}
@@ -71,13 +91,23 @@ export function SettingsPanel({ settings, isOpen, onToggle, onChange }: Settings
             onValue={(value) => onChange({ fontSize: value })}
           />
           <RangeSetting
-            label="Words"
+            label={settings.stepGroupingMode === "characters" ? "Characters" : "Words"}
             min={1}
-            max={4}
+            max={settings.stepGroupingMode === "characters" ? 24 : 4}
             step={1}
-            value={settings.chunkSize}
+            value={
+              settings.stepGroupingMode === "characters"
+                ? settings.characterChunkSize
+                : settings.chunkSize
+            }
             format={(value) => String(value)}
-            onValue={(value) => onChange({ chunkSize: value })}
+            onValue={(value) =>
+              onChange(
+                settings.stepGroupingMode === "characters"
+                  ? { characterChunkSize: value }
+                  : { chunkSize: value },
+              )
+            }
           />
           <OptionGroup
             label="Pause"
@@ -125,10 +155,6 @@ export function SettingsPanel({ settings, isOpen, onToggle, onChange }: Settings
       ) : null}
     </aside>
   );
-}
-
-function formatStepDuration(value: number) {
-  return `${(value / 1000).toFixed(2)}s`;
 }
 
 function OptionGroup<T extends string>({

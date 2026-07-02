@@ -10,15 +10,19 @@ describe("settings persistence", () => {
   it("normalizes invalid values back to safe defaults", () => {
     expect(
       normalizeSettings({
-        stepDurationMs: 9_000,
+        stepsPerMinute: 9_000,
         fontSize: 500,
         chunkSize: 99,
+        characterChunkSize: 99,
+        stepGroupingMode: "characters",
         stopMode: "unknown",
       }),
     ).toMatchObject({
-      stepDurationMs: 2_000,
+      stepsPerMinute: 300,
       fontSize: 96,
       chunkSize: 4,
+      characterChunkSize: 24,
+      stepGroupingMode: "characters",
       stopMode: "unknown",
     });
   });
@@ -26,16 +30,20 @@ describe("settings persistence", () => {
   it("clamps lower bounds and rejects unknown select values", () => {
     expect(
       normalizeSettings({
-        stepDurationMs: 1,
+        stepsPerMinute: 1,
         fontSize: 1,
         chunkSize: 0,
+        characterChunkSize: 0,
+        stepGroupingMode: "paragraphs" as never,
         stopMode: "sometimes" as never,
         theme: "sepia" as never,
       }),
     ).toMatchObject({
-      stepDurationMs: 100,
+      stepsPerMinute: 80,
       fontSize: 36,
       chunkSize: 1,
+      characterChunkSize: 1,
+      stepGroupingMode: DEFAULT_SETTINGS.stepGroupingMode,
       stopMode: DEFAULT_SETTINGS.stopMode,
       theme: DEFAULT_SETTINGS.theme,
     });
@@ -47,18 +55,23 @@ describe("settings persistence", () => {
   });
 
   it("loads saved settings from localStorage", () => {
-    saveSettings({ ...DEFAULT_SETTINGS, stepDurationMs: 500, stopMode: "never" });
-    expect(loadSettings()).toMatchObject({ stepDurationMs: 500, stopMode: "never" });
+    saveSettings({ ...DEFAULT_SETTINGS, stepsPerMinute: 120, stopMode: "never" });
+    expect(loadSettings()).toMatchObject({ stepsPerMinute: 120, stopMode: "never" });
   });
 
   it("rounds numeric settings before saving", () => {
-    saveSettings({ ...DEFAULT_SETTINGS, stepDurationMs: 150.6, fontSize: 63.2 });
-    expect(loadSettings()).toMatchObject({ stepDurationMs: 151, fontSize: 63 });
+    saveSettings({ ...DEFAULT_SETTINGS, stepsPerMinute: 150.6, fontSize: 63.2 });
+    expect(loadSettings()).toMatchObject({ stepsPerMinute: 151, fontSize: 63 });
   });
 
-  it("migrates legacy WPM settings to step duration", () => {
+  it("migrates legacy step durations to steps per minute", () => {
+    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ stepDurationMs: 450 }));
+    expect(loadSettings()).toMatchObject({ stepsPerMinute: 133 });
+  });
+
+  it("migrates legacy WPM settings to steps per minute", () => {
     localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ wpm: 300 }));
-    expect(loadSettings()).toMatchObject({ stepDurationMs: 200 });
+    expect(loadSettings()).toMatchObject({ stepsPerMinute: 300 });
   });
 
   it("persists user-entered recap AI settings", () => {

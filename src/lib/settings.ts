@@ -1,8 +1,9 @@
-import type { ReaderSettings, StopMode, ThemeMode } from "../types";
+import type { ReaderSettings, StepGroupingMode, StopMode, ThemeMode } from "../types";
 import { DEFAULT_SETTINGS } from "./rsvp";
 
 const SETTINGS_KEY = "migaku-rsvp:settings";
 const STOP_MODES = new Set<StopMode>(["unknown", "never", "i+1"]);
+const STEP_GROUPING_MODES = new Set<StepGroupingMode>(["words", "characters"]);
 const THEMES = new Set<ThemeMode>(["paper", "dark", "contrast"]);
 
 export function loadSettings(): ReaderSettings {
@@ -22,19 +23,30 @@ export function saveSettings(settings: ReaderSettings) {
 }
 
 type StoredSettings = Partial<ReaderSettings> & {
+  stepDurationMs?: unknown;
   wpm?: unknown;
 };
 
 export function normalizeSettings(value: StoredSettings): ReaderSettings {
   return {
-    stepDurationMs: clampNumber(
-      value.stepDurationMs ?? legacyStepDurationMs(value.wpm),
-      100,
-      2_000,
-      DEFAULT_SETTINGS.stepDurationMs,
+    stepsPerMinute: clampNumber(
+      value.stepsPerMinute ?? legacyStepsPerMinute(value.stepDurationMs, value.wpm),
+      80,
+      300,
+      DEFAULT_SETTINGS.stepsPerMinute,
     ),
     fontSize: clampNumber(value.fontSize, 36, 96, DEFAULT_SETTINGS.fontSize),
+    stepGroupingMode:
+      value.stepGroupingMode && STEP_GROUPING_MODES.has(value.stepGroupingMode)
+        ? value.stepGroupingMode
+        : DEFAULT_SETTINGS.stepGroupingMode,
     chunkSize: clampNumber(value.chunkSize, 1, 4, DEFAULT_SETTINGS.chunkSize),
+    characterChunkSize: clampNumber(
+      value.characterChunkSize,
+      1,
+      24,
+      DEFAULT_SETTINGS.characterChunkSize,
+    ),
     stopMode:
       value.stopMode && STOP_MODES.has(value.stopMode) ? value.stopMode : DEFAULT_SETTINGS.stopMode,
     theme: value.theme && THEMES.has(value.theme) ? value.theme : DEFAULT_SETTINGS.theme,
@@ -44,15 +56,20 @@ export function normalizeSettings(value: StoredSettings): ReaderSettings {
   };
 }
 
-function legacyStepDurationMs(wpm: unknown) {
-  if (typeof wpm !== "number" || Number.isNaN(wpm) || wpm <= 0) {
-    return undefined;
+function legacyStepsPerMinute(stepDurationMs: unknown, wpm: unknown) {
+  if (typeof stepDurationMs === "number" && Number.isFinite(stepDurationMs) && stepDurationMs > 0) {
+    return 60_000 / stepDurationMs;
   }
-  return 60_000 / wpm;
+
+  if (typeof wpm === "number" && Number.isFinite(wpm) && wpm > 0) {
+    return wpm;
+  }
+
+  return undefined;
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number) {
-  if (typeof value !== "number" || Number.isNaN(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
   return Math.min(max, Math.max(min, Math.round(value)));

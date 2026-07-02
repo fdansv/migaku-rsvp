@@ -94,9 +94,9 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
     "false",
   );
   await page.getByRole("button", { name: "Settings" }).click();
-  await setRangeValue(page.locator("label", { hasText: "Step time" }).locator("input"), "550");
-  await expect(page.locator("label", { hasText: "Step time" }).locator(".setting-value")).toHaveText(
-    "0.55s",
+  await setRangeValue(page.locator("label", { hasText: "Steps/min" }).locator("input"), "133");
+  await expect(page.locator("label", { hasText: "Steps/min" }).locator(".setting-value")).toHaveText(
+    "133",
   );
   await setRangeValue(page.locator("label", { hasText: "Font" }).locator("input"), "80");
   await expect(page.locator("label", { hasText: "Font" }).locator(".setting-value")).toHaveText(
@@ -106,6 +106,11 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
+  await page.locator("label", { hasText: "Group by" }).locator("select").selectOption("characters");
+  await setRangeValue(page.locator("label", { hasText: "Characters" }).locator("input"), "3");
+  await expectRsvpDisplayText(page, "猫が走");
+  await page.locator("label", { hasText: "Group by" }).locator("select").selectOption("words");
+  await expectRsvpDisplayText(page, "猫が走る。");
   await page.getByRole("button", { name: "Never" }).click();
   await expect(page.getByRole("button", { name: "Never" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Unknown" }).click();
@@ -120,8 +125,8 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
 
   await page.reload();
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.locator("label", { hasText: "Step time" }).locator(".setting-value")).toHaveText(
-    "0.55s",
+  await expect(page.locator("label", { hasText: "Steps/min" }).locator(".setting-value")).toHaveText(
+    "133",
   );
   await expect(page.locator("label", { hasText: "Font" }).locator(".setting-value")).toHaveText(
     "80px",
@@ -129,7 +134,7 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
-  await setRangeValue(page.locator("label", { hasText: "Step time" }).locator("input"), "400");
+  await setRangeValue(page.locator("label", { hasText: "Steps/min" }).locator("input"), "150");
   await setRangeValue(page.locator("label", { hasText: "Words" }).locator("input"), "1");
 
   await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {
@@ -414,6 +419,38 @@ test("backs up from the playback position after manual steps", async ({ page }, 
   await expectProgressCurrent(page, 5);
 });
 
+test("continues character-mode playback inside a multi-character token", async ({
+  page,
+}, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "character-playback.epub");
+  await createSmallEpub(epubPath, ["の職場だった。"]);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem(
+      "migaku-rsvp:settings",
+      JSON.stringify({
+        stepGroupingMode: "characters",
+        characterChunkSize: 1,
+        stepsPerMinute: 80,
+        stopMode: "never",
+      }),
+    );
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("の職場だった。", {
+    timeout: 30_000,
+  });
+  await expectRsvpDisplayText(page, "の");
+  await page.getByRole("button", { name: "Play" }).click();
+  await expectRsvpDisplayText(page, "だ");
+  await page.getByRole("button", { name: "Pause" }).click();
+});
+
 test("ignores repeated transport keydown events", async ({ page }, testInfo) => {
   const epubPath = path.join(testInfo.outputDir, "keyboard-repeat.epub");
   await createSmallEpub(epubPath);
@@ -493,8 +530,8 @@ test("keeps Migaku-wrapped progress indicator synced while navigating and playin
   await expect.poll(() => page.locator("progress").getAttribute("value")).not.toBe(previousProgress);
   const currentProgress = await page.locator("progress").getAttribute("value");
   const totalProgress = await page.locator("progress").getAttribute("max");
-  await expect(page.locator(".reader-progress-value--full")).toContainText(
-    `${currentProgress}/${totalProgress}`,
+  await expect(page.locator(".reader-progress-value--full")).toHaveText(
+    `${Math.round((Number(currentProgress) / Number(totalProgress)) * 100)}%`,
   );
 });
 
@@ -960,12 +997,12 @@ test("keeps large progress labels on one line on mobile", async ({ page }, testI
     }
     progressButton.setAttribute("aria-label", "Jump to location, current 9669 of 102203");
     const full = progressButton.querySelector<HTMLElement>(".reader-progress-value--full");
-    const compact = progressButton.querySelector<HTMLElement>(".reader-progress-value--compact");
-    if (!full || !compact) {
+    const location = progressButton.querySelector<HTMLElement>(".reader-progress-value--location");
+    if (!full || !location) {
       throw new Error("Missing progress labels.");
     }
-    full.textContent = "9% · 9669/102203";
-    compact.textContent = "9% · 9669";
+    full.textContent = "9%";
+    location.textContent = " · 9669/102203";
   });
 
   await expect
@@ -974,14 +1011,14 @@ test("keeps large progress labels on one line on mobile", async ({ page }, testI
         height: button.getBoundingClientRect().height,
         scrollHeight: button.scrollHeight,
         text: (button as HTMLElement).innerText.trim(),
-        compactVisible:
-          getComputedStyle(button.querySelector(".reader-progress-value--compact")!).display !==
+        locationVisible:
+          getComputedStyle(button.querySelector(".reader-progress-value--location")!).display !==
           "none",
       })),
     )
     .toMatchObject({
-      text: "9% · 9669",
-      compactVisible: true,
+      text: "9%",
+      locationVisible: false,
     });
   await expect
     .poll(() =>
@@ -1015,60 +1052,61 @@ test("keeps desktop progress location control from shifting reader text", async 
   const initialDisplayTop = await page
     .locator(".rsvp-token-display")
     .evaluate((display) => display.getBoundingClientRect().top);
+  const initialMetaHeight = await page
+    .locator(".reader-meta")
+    .evaluate((meta) => meta.getBoundingClientRect().height);
+  await expect(page.locator(".reader-progress-value--full")).toHaveText(/\d+%/);
+  await expect(page.locator(".reader-progress-value--location")).toBeHidden();
+  await page.locator(".progress-jump-button").hover();
+  await expect(page.locator(".reader-progress-value--location")).toBeVisible();
+  await expect(page.locator(".reader-progress-value--location")).toContainText(/\d+\/\d+/);
+  await page.mouse.move(0, 0);
 
-  await page.addStyleTag({
-    content: `
-      .reader-progress-value--full .migaku-token,
-      .reader-progress-value--full .migaku-fragment,
-      .reader-progress-value--full .migaku-surface {
-        display: block;
-      }
-    `,
-  });
   await page.evaluate(() => {
     const progressButton = document.querySelector<HTMLButtonElement>(".progress-jump-button");
     if (!progressButton) {
       throw new Error("Missing progress button.");
     }
     progressButton.setAttribute("aria-label", "Jump to location, current 99999 of 100000");
+    progressButton.style.setProperty("height", "64px", "important");
+    progressButton.style.setProperty("align-items", "flex-start", "important");
     const full = progressButton.querySelector<HTMLElement>(".reader-progress-value--full");
-    const compact = progressButton.querySelector<HTMLElement>(".reader-progress-value--compact");
-    if (!full || !compact) {
+    const location = progressButton.querySelector<HTMLElement>(".reader-progress-value--location");
+    if (!full || !location) {
       throw new Error("Missing progress labels.");
     }
     full.innerHTML = `
-      <span class="migaku-token -mgk-blacklisted -mgk-no-readings">
-        <span class="migaku-fragment -mgk-content">
-          <span class="migaku-surface">100% · 99999/100000</span>
-          <span class="migaku-spacer" aria-hidden="true">\u200b</span>
-        </span>
-      </span>
+      <span class="simulated-progress-line">100% · 99999</span>
+      <span class="simulated-progress-line">/100000</span>
     `;
-    compact.textContent = "100% · 99999";
+    full.querySelectorAll<HTMLElement>(".simulated-progress-line").forEach((line) => {
+      line.style.setProperty("display", "block", "important");
+      line.style.setProperty("line-height", "28px", "important");
+    });
+    location.textContent = " · 99999/100000";
   });
 
-  await expect(page.locator(".reader-progress-value--full .migaku-surface")).toHaveText(
-    "100% · 99999/100000",
+  await expect(page.locator(".reader-progress-value--full .simulated-progress-line")).toHaveCount(
+    2,
   );
   await expect
     .poll(() =>
-      page.locator(".progress-jump-button").evaluate((button) => {
-        const height = button.getBoundingClientRect().height;
-        const full = button.querySelector(".reader-progress-value--full");
-        return {
-          compactVisible:
-            getComputedStyle(button.querySelector(".reader-progress-value--compact")!).display !==
-            "none",
-          fullVisible: full ? getComputedStyle(full).display !== "none" : false,
-          oneLine: button.scrollHeight <= Math.ceil(height),
-        };
-      }),
+      page
+        .locator(".progress-jump-button")
+        .evaluate((button) => button.getBoundingClientRect().height),
     )
-    .toMatchObject({
-      compactVisible: false,
-      fullVisible: true,
-      oneLine: true,
-    });
+    .toBeGreaterThan(60);
+  await expect
+    .poll(() =>
+      page
+        .locator(".reader-meta")
+        .evaluate(
+          (meta, expectedHeight) =>
+            Math.abs(meta.getBoundingClientRect().height - expectedHeight),
+          initialMetaHeight,
+        ),
+    )
+    .toBeLessThan(1);
   await expect
     .poll(() =>
       page
@@ -1092,7 +1130,13 @@ async function expectRsvpDisplayText(page: Page, text: string) {
 async function expectProgressCurrent(page: Page, current: number) {
   const total = await page.locator("progress").getAttribute("max");
   await expect(page.locator("progress")).toHaveAttribute("value", String(current));
-  await expect(page.locator(".reader-progress-value--full")).toContainText(`${current}/${total}`);
+  await expect(page.getByRole("button", { name: /Jump to location/ })).toHaveAttribute(
+    "aria-label",
+    `Jump to location, current ${current} of ${total}`,
+  );
+  await expect(page.locator(".reader-progress-value--full")).toHaveText(
+    `${Math.round((current / Number(total)) * 100)}%`,
+  );
 }
 
 async function dispatchTransportKey(page: Page, code: string, repeat: boolean) {

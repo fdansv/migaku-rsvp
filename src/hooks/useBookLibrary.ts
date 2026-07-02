@@ -189,7 +189,8 @@ export function useBookLibrary() {
         if (
           !book ||
           (book.progress.sentenceIndex === progress.sentenceIndex &&
-            book.progress.tokenIndex === progress.tokenIndex)
+            book.progress.tokenIndex === progress.tokenIndex &&
+            book.progress.characterOffset === progress.characterOffset)
         ) {
           return currentBooks;
         }

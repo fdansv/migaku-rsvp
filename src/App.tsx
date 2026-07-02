@@ -12,15 +12,16 @@ import {
   advanceSentencePosition,
   clampPosition,
   flattenSentences,
-  getDisplayText,
-  getDisplayTokens,
+  getDisplayStep,
   getPositionForProgressUnit,
   getProgressStats,
+  getStepConfig,
   getStepDelayMs,
   getUnknownWordUnitCount,
   retreatPosition,
   retreatSentencePosition,
   shouldStopForTokenIndexes,
+  type ReaderStepConfig,
   type TokenGroupsBySentenceId,
 } from "./lib/rsvp";
 import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
@@ -88,11 +89,11 @@ export function App() {
   const playbackTimerRef = useRef<number | null>(null);
   const playbackStepRef = useRef<{
     sentences: Sentence[];
-    chunkSize: number;
+    stepConfig: ReaderStepConfig;
     tokenGroupsBySentenceId: TokenGroupsBySentenceId;
   }>({
     sentences: [],
-    chunkSize: settings.chunkSize,
+    stepConfig: getStepConfig(settings),
     tokenGroupsBySentenceId: {},
   });
   const translationRequestsRef = useRef(new Set<string>());
@@ -129,17 +130,21 @@ export function App() {
 
   const sentences = useMemo(() => flattenSentences(selectedBook), [selectedBook]);
   const safePosition = useMemo(() => clampPosition(position, sentences), [position, sentences]);
+  const stepConfig = useMemo(
+    () => getStepConfig(settings),
+    [settings.characterChunkSize, settings.chunkSize, settings.stepGroupingMode],
+  );
   const currentSentence = sentences[safePosition.sentenceIndex];
-  const fallbackDisplayTokens = useMemo(
+  const fallbackDisplayStep = useMemo(
     () =>
       currentSentence
-        ? getDisplayTokens(currentSentence, safePosition.tokenIndex, settings.chunkSize)
-        : [],
-    [currentSentence, safePosition.tokenIndex, settings.chunkSize],
+        ? getDisplayStep(currentSentence, safePosition, stepConfig)
+        : { startOffset: 0, endOffset: 0, tokenIndexes: [], text: "" },
+    [currentSentence, safePosition, stepConfig],
   );
   const fallbackDisplayTokenIndexes = useMemo(
-    () => fallbackDisplayTokens.map((token) => token.index),
-    [fallbackDisplayTokens],
+    () => fallbackDisplayStep.tokenIndexes,
+    [fallbackDisplayStep],
   );
   const bufferWindow = useMemo(
     () => getMigakuBufferWindow(selectedBook?.id, sentences, safePosition.sentenceIndex),
@@ -161,36 +166,26 @@ export function App() {
     [currentSentence, migakuTokenGroups],
   );
   const progress = useMemo(
-    () => getProgressStats(safePosition, sentences, settings.chunkSize, tokenGroupsBySentenceId),
-    [safePosition, sentences, settings.chunkSize, tokenGroupsBySentenceId],
+    () => getProgressStats(safePosition, sentences, stepConfig, tokenGroupsBySentenceId),
+    [safePosition, sentences, stepConfig, tokenGroupsBySentenceId],
   );
-  const displayTokens = useMemo(
+  const displayStep = useMemo(
     () =>
       currentSentence
-        ? getDisplayTokens(
-            currentSentence,
-            safePosition.tokenIndex,
-            settings.chunkSize,
-            migakuTokenGroups,
-          )
-        : [],
-    [currentSentence, safePosition.tokenIndex, settings.chunkSize, migakuTokenGroups],
+        ? getDisplayStep(currentSentence, safePosition, stepConfig, migakuTokenGroups)
+        : { startOffset: 0, endOffset: 0, tokenIndexes: [], text: "" },
+    [currentSentence, safePosition, stepConfig, migakuTokenGroups],
   );
   const displayTokenIndexes = useMemo(
-    () => displayTokens.map((token) => token.index),
-    [displayTokens],
+    () => displayStep.tokenIndexes,
+    [displayStep],
   );
-  const displayTokenKey = displayTokenIndexes.join(",");
-  const displayText = currentSentence
-    ? getDisplayText(
-        currentSentence,
-        safePosition.tokenIndex,
-        settings.chunkSize,
-        migakuTokenGroups,
-      )
+  const displayTokenKey = `${displayStep.startOffset}:${displayStep.endOffset}:${displayTokenIndexes.join(",")}`;
+  const displayText = displayStep.text;
+  const stepDelayMs = useMemo(() => getStepDelayMs(settings), [settings.stepsPerMinute]);
+  const activeStepKey = currentSentence
+    ? `${currentSentence.id}:${displayStep.startOffset}:${displayStep.endOffset}:${displayTokenIndexes.join(",")}`
     : "";
-  const stepDelayMs = useMemo(() => getStepDelayMs(settings), [settings.stepDurationMs]);
-  const activeKey = currentSentence ? `${currentSentence.id}:${safePosition.tokenIndex}` : "";
   const shouldStop =
     Boolean(currentSentence) &&
     shouldStopForTokenIndexes(
@@ -230,15 +225,15 @@ export function App() {
   useEffect(() => {
     setAutoPaused(false);
     setSkipStopKey(null);
-  }, [activeKey]);
+  }, [activeStepKey]);
 
   useEffect(() => {
     playbackStepRef.current = {
       sentences,
-      chunkSize: settings.chunkSize,
+      stepConfig,
       tokenGroupsBySentenceId,
     };
-  }, [sentences, settings.chunkSize, tokenGroupsBySentenceId]);
+  }, [sentences, stepConfig, tokenGroupsBySentenceId]);
 
   useEffect(() => {
     setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" });
@@ -336,7 +331,7 @@ export function App() {
       return;
     }
 
-    if (shouldStop && skipStopKey !== activeKey) {
+    if (shouldStop && skipStopKey !== activeStepKey) {
       clearPlaybackTimer();
       setPlaying(false);
       setAutoPaused(true);
@@ -352,13 +347,10 @@ export function App() {
         const next = advancePosition(
           previous,
           playbackStep.sentences,
-          playbackStep.chunkSize,
+          playbackStep.stepConfig,
           playbackStep.tokenGroupsBySentenceId,
         );
-        if (
-          next.sentenceIndex === previous.sentenceIndex &&
-          next.tokenIndex === previous.tokenIndex
-        ) {
+        if (isSameReaderPosition(next, previous)) {
           setPlaying(false);
         }
         return next;
@@ -373,7 +365,7 @@ export function App() {
       }
     };
   }, [
-    activeKey,
+    activeStepKey,
     currentSentence?.id,
     playing,
     shouldStop,
@@ -445,7 +437,7 @@ export function App() {
     }
 
     if (!playing && autoPaused && shouldStop) {
-      setSkipStopKey(activeKey);
+      setSkipStopKey(activeStepKey);
     }
     if (playing) {
       clearPlaybackTimer();
@@ -458,7 +450,7 @@ export function App() {
     setAutoPaused(false);
     stopPlayback();
     setPosition((previous) =>
-      advancePosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+      advancePosition(previous, sentences, stepConfig, tokenGroupsBySentenceId),
     );
   }
 
@@ -466,7 +458,7 @@ export function App() {
     setAutoPaused(false);
     stopPlayback();
     setPosition((previous) =>
-      retreatPosition(previous, sentences, settings.chunkSize, tokenGroupsBySentenceId),
+      retreatPosition(previous, sentences, stepConfig, tokenGroupsBySentenceId),
     );
   }
 
@@ -490,7 +482,7 @@ export function App() {
   function jumpToProgressLocation(location: number) {
     setAutoPaused(false);
     stopPlayback();
-    setPosition(getPositionForProgressUnit(location, sentences, settings.chunkSize));
+    setPosition(getPositionForProgressUnit(location, sentences, stepConfig));
   }
 
   async function handleRecap() {
@@ -557,6 +549,10 @@ export function App() {
           currentSentence={currentSentence}
           progress={progress}
           displayText={displayText}
+          displayRange={{
+            startOffset: displayStep.startOffset,
+            endOffset: displayStep.endOffset,
+          }}
           displayTokenIndexes={displayTokenIndexes}
           displayTokenKey={displayTokenKey}
           bufferSentences={bufferWindow.sentences}
@@ -589,6 +585,17 @@ export function App() {
         />
       </div>
     </div>
+  );
+}
+
+function isSameReaderPosition(
+  left: { sentenceIndex: number; tokenIndex: number; characterOffset?: number },
+  right: { sentenceIndex: number; tokenIndex: number; characterOffset?: number },
+) {
+  return (
+    left.sentenceIndex === right.sentenceIndex &&
+    left.tokenIndex === right.tokenIndex &&
+    left.characterOffset === right.characterOffset
   );
 }
 

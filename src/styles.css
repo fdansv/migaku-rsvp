@@ -246,15 +246,17 @@ button {
 }
 
 .reader {
+  --reader-meta-height: 38px;
+  --reader-progress-height: 38px;
   display: grid;
-  grid-template-rows: minmax(38px, auto) minmax(0, 1fr) auto auto;
+  grid-template-rows: var(--reader-meta-height) minmax(0, 1fr) auto auto;
   gap: 16px;
   min-width: 0;
   padding: 18px clamp(18px, 4vw, 56px);
 }
 
 .reader--with-recap {
-  grid-template-rows: minmax(38px, auto) auto minmax(0, 1fr) auto auto;
+  grid-template-rows: var(--reader-meta-height) auto minmax(0, 1fr) auto auto;
 }
 
 .reader-meta {
@@ -262,7 +264,9 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 38px;
+  height: var(--reader-meta-height);
+  min-height: 0;
+  overflow: hidden;
   color: var(--muted);
   font-size: 0.88rem;
 }
@@ -286,8 +290,10 @@ button {
   flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 10px;
-  min-height: 32px;
+  height: var(--reader-progress-height);
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
 }
 
@@ -295,7 +301,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18ch;
+  width: 20ch;
   height: 32px;
   min-width: 0;
   padding: 4px 6px;
@@ -312,17 +318,39 @@ button {
 
 .reader-progress-value {
   display: block;
+  line-height: 1;
   max-width: 100%;
   min-width: 0;
 }
 
-.reader-progress-value :where(.migaku-token, .migaku-fragment, .migaku-surface, .migaku-spacer) {
+.reader-progress-value,
+.reader-progress-value * {
+  white-space: nowrap !important;
+}
+
+.reader-progress-value * {
   display: inline !important;
+  line-height: 1 !important;
+  vertical-align: baseline !important;
+}
+
+.reader-progress-value :where(.migaku-reading, .migaku-ruby, rt, rp) {
+  display: none !important;
+}
+
+.reader-progress-value :where(.migaku-token, .migaku-fragment, .migaku-surface, .migaku-spacer) {
   white-space: inherit !important;
 }
 
-.reader-progress-value--compact {
+.reader-progress-value--location {
   display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .progress-jump-button:hover .reader-progress-value--location,
+  .progress-jump-button:focus-visible .reader-progress-value--location {
+    display: block;
+  }
 }
 
 .progress-jump-button:hover,
@@ -887,7 +915,8 @@ progress::-webkit-progress-value {
   accent-color: var(--accent);
 }
 
-.settings input:not([type="range"]) {
+.settings input:not([type="range"]),
+.settings select {
   width: 100%;
   min-height: 36px;
   padding: 0 9px;
@@ -994,11 +1023,16 @@ progress::-webkit-progress-value {
     justify-content: space-between;
   }
 
+  .reader {
+    --reader-meta-height: 76px;
+    --reader-progress-height: 38px;
+  }
+
   .reader-meta {
     flex-direction: column;
     align-items: center;
     gap: 6px;
-    min-height: 76px;
+    min-height: var(--reader-meta-height);
   }
 
   .reader-progress {
@@ -1008,14 +1042,6 @@ progress::-webkit-progress-value {
   .progress-jump-button,
   .progress-jump-form {
     width: min(20ch, 100%);
-  }
-
-  .reader-progress-value--full {
-    display: none;
-  }
-
-  .reader-progress-value--compact {
-    display: block;
   }
 
   .rsvp-token-display {
