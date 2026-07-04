@@ -55,6 +55,46 @@ describe("parseEpub", () => {
     expect(book.tokenizerVersion).toBeDefined();
   });
 
+  it("decodes UTF-16 encoded XML files before parsing", async () => {
+    const zip = new JSZip();
+    zip.file("mimetype", "application/epub+zip");
+    zip.file(
+      "META-INF/container.xml",
+      Buffer.from(
+        `\ufeff<?xml version="1.0" encoding="UTF-16"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+          </rootfiles>
+        </container>`,
+        "utf16le",
+      ),
+    );
+    zip.file(
+      "OEBPS/content.opf",
+      `<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+        <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>UTF-16</dc:title></metadata>
+        <manifest>
+          <item id="chapter1" href="Text/chapter1.xhtml" media-type="application/xhtml+xml"/>
+        </manifest>
+        <spine><itemref idref="chapter1"/></spine>
+      </package>`,
+    );
+    zip.file(
+      "OEBPS/Text/chapter1.xhtml",
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>猫が走る。</p></body></html>`,
+    );
+
+    const book = await parseEpub(
+      await zip.generateAsync({ type: "arraybuffer" }),
+      "utf16-container.epub",
+    );
+
+    expect(book.title).toBe("UTF-16");
+    expect(book.chapters[0].sentences[0].text).toBe("猫が走る。");
+  });
+
   it("honors spine order and skips non-readable manifest items", async () => {
     const zip = new JSZip();
     zip.file("mimetype", "application/epub+zip");

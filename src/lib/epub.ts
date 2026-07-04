@@ -98,7 +98,8 @@ async function readRequiredText(zip: JSZip, path: string) {
   if (!file) {
     throw new Error(`Missing EPUB file: ${path}`);
   }
-  return file.async("text");
+  const buffer = await file.async("arraybuffer");
+  return decodeXmlText(new Uint8Array(buffer));
 }
 
 function parseXml(source: string, name: string) {
@@ -108,6 +109,59 @@ function parseXml(source: string, name: string) {
     throw new Error(`Could not parse ${name}.`);
   }
   return doc;
+}
+
+function decodeXmlText(bytes: Uint8Array) {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return decodeText(bytes, "utf-8");
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return decodeText(bytes, "utf-16le");
+  }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return decodeText(bytes, "utf-16be");
+  }
+  if (bytes[0] === 0x3c && bytes[1] === 0x00 && bytes[2] === 0x3f && bytes[3] === 0x00) {
+    return decodeText(bytes, "utf-16le");
+  }
+  if (bytes[0] === 0x00 && bytes[1] === 0x3c && bytes[2] === 0x00 && bytes[3] === 0x3f) {
+    return decodeText(bytes, "utf-16be");
+  }
+
+  return decodeText(bytes, declaredXmlEncoding(bytes) ?? "utf-8");
+}
+
+function declaredXmlEncoding(bytes: Uint8Array) {
+  const prefix = Array.from(bytes.slice(0, 512), (byte) =>
+    byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : " ",
+  ).join("");
+  const match = prefix.match(/<\?xml\s+[^>]*encoding\s*=\s*["']([^"']+)["']/i);
+  return match ? normalizeEncodingLabel(match[1]) : null;
+}
+
+function normalizeEncodingLabel(label: string) {
+  const normalized = label.trim().toLowerCase().replace(/_/g, "-");
+  if (normalized === "utf8") {
+    return "utf-8";
+  }
+  if (normalized === "utf16" || normalized === "utf-16") {
+    return "utf-16le";
+  }
+  if (normalized === "utf16le") {
+    return "utf-16le";
+  }
+  if (normalized === "utf16be") {
+    return "utf-16be";
+  }
+  return normalized;
+}
+
+function decodeText(bytes: Uint8Array, encoding: string) {
+  try {
+    return new TextDecoder(encoding).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
 }
 
 function readMetadata(opf: Document, sourceName: string) {
