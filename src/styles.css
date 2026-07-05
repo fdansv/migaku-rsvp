@@ -144,17 +144,20 @@ button {
 }
 
 .shell--settings-collapsed {
-  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) minmax(190px, 260px);
 }
 
-.library,
-.settings {
+.library {
   padding: 18px;
   border-right: 1px solid var(--line);
 }
 
-.settings {
-  border-right: 0;
+.right-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 18px;
   border-left: 1px solid var(--line);
 }
 
@@ -249,6 +252,7 @@ button {
   --reader-meta-height: 38px;
   --reader-progress-height: 38px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--reader-meta-height) minmax(0, 1fr) auto auto;
   gap: 16px;
   min-width: 0;
@@ -266,6 +270,7 @@ button {
   gap: 16px;
   height: var(--reader-meta-height);
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   color: var(--muted);
   font-size: 0.88rem;
@@ -316,11 +321,20 @@ button {
   white-space: nowrap;
 }
 
+.progress-jump-button--with-remaining {
+  width: 24ch;
+}
+
 .reader-progress-value {
   display: block;
+  flex: 0 1 auto;
   line-height: 1;
   max-width: 100%;
   min-width: 0;
+}
+
+.reader-progress-value--remaining {
+  color: var(--text);
 }
 
 .reader-progress-value,
@@ -847,7 +861,7 @@ progress::-webkit-progress-value {
 }
 
 .settings.is-collapsed {
-  padding: 10px;
+  align-items: flex-start;
 }
 
 .settings-toggle {
@@ -902,7 +916,7 @@ progress::-webkit-progress-value {
 
 .stats-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1118,7 +1132,7 @@ progress::-webkit-progress-value {
   }
 
   .library,
-  .settings {
+  .right-rail {
     border: 0;
     border-bottom: 1px solid var(--line);
   }
@@ -1127,7 +1141,7 @@ progress::-webkit-progress-value {
     order: 2;
   }
 
-  .settings {
+  .right-rail {
     order: 3;
   }
 
@@ -1166,6 +1180,10 @@ progress::-webkit-progress-value {
   .progress-jump-button,
   .progress-jump-form {
     width: min(20ch, 100%);
+  }
+
+  .progress-jump-button--with-remaining {
+    width: min(24ch, 100%);
   }
 
   .rsvp-token-display {

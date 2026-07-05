@@ -14,6 +14,7 @@ import type {
   MigakuTokenStatus,
   Sentence,
 } from "../types";
+import { formatReadingDuration } from "../lib/readingStats";
 import { getDisplayRenderSegments } from "../lib/rsvp";
 import { MigakuSentenceSurface } from "./MigakuSentenceSurface";
 
@@ -38,6 +39,7 @@ interface ReaderPaneProps {
   rsvpDisplayRef: RefObject<HTMLDivElement | null>;
   migakuRootRef: RefObject<HTMLDivElement | null>;
   fontSize: number;
+  remainingReadingDurationMs: number | null;
   playing: boolean;
   recapStatus: "idle" | "loading" | "success" | "error";
   recapSummary: string;
@@ -68,6 +70,7 @@ export function ReaderPane({
   rsvpDisplayRef,
   migakuRootRef,
   fontSize,
+  remainingReadingDurationMs,
   playing,
   recapStatus,
   recapSummary,
@@ -91,6 +94,8 @@ export function ReaderPane({
   const [progressInput, setProgressInput] = useState("");
   const [progressInputInvalid, setProgressInputInvalid] = useState(false);
   const displayTokenIndexSet = useMemo(() => new Set(displayTokenIndexes), [displayTokenIndexes]);
+  const remainingReadingLabel =
+    remainingReadingDurationMs === null ? "" : formatReadingDuration(remainingReadingDurationMs);
   const sentenceContextBefore =
     currentSentence && displayRange.startOffset > 0
       ? currentSentence.text.slice(0, displayRange.startOffset)
@@ -250,15 +255,28 @@ export function ReaderPane({
               ) : (
                 <button
                   key={`${progress.current}:${progress.total}:${progress.percent}`}
-                  className="progress-jump-button"
+                  className={`progress-jump-button${
+                    remainingReadingLabel ? " progress-jump-button--with-remaining" : ""
+                  }`}
                   type="button"
                   aria-label={`Jump to location, current ${progress.current} of ${progress.total}`}
-                  title={`${progress.percent}% · ${progress.current}/${progress.total}`}
+                  title={`${progress.percent}%${
+                    remainingReadingLabel ? ` · ${remainingReadingLabel} left` : ""
+                  } · ${progress.current}/${progress.total}`}
                   onClick={beginProgressJump}
                 >
                   <span className="reader-progress-value reader-progress-value--full reader-progress-value--percent">
                     {progress.percent}%
                   </span>
+                  {remainingReadingLabel ? (
+                    <span
+                      className="reader-progress-value reader-progress-value--remaining"
+                      aria-hidden="true"
+                    >
+                      {" "}
+                      · {remainingReadingLabel} left
+                    </span>
+                  ) : null}
                   <span
                     className="reader-progress-value reader-progress-value--location"
                     aria-hidden="true"

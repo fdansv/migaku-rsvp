@@ -3,6 +3,7 @@ import { DropOverlay } from "./components/DropOverlay";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { ReaderPane } from "./components/ReaderPane";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { StatsPanel } from "./components/StatsPanel";
 import { Topbar } from "./components/Topbar";
 import { useBookLibrary } from "./hooks/useBookLibrary";
 import { useFileDrop } from "./hooks/useFileDrop";
@@ -735,6 +736,7 @@ export function App() {
           rsvpDisplayRef={rsvpDisplayRef}
           migakuRootRef={migakuRootRef}
           fontSize={settings.fontSize}
+          remainingReadingDurationMs={remainingReadingTimeEstimate?.durationMs ?? null}
           playing={playing}
           recapStatus={recap.status}
           recapSummary={recap.summary}
@@ -752,14 +754,15 @@ export function App() {
             setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" })
           }
         />
-        <SettingsPanel
-          settings={settings}
-          isOpen={settingsOpen}
-          readingStatsDays={readingStatsDays}
-          remainingReadingDurationMs={remainingReadingTimeEstimate?.durationMs ?? null}
-          onToggle={() => setSettingsOpen((previous) => !previous)}
-          onChange={updateSettings}
-        />
+        <aside className="right-rail" aria-label="Reader tools">
+          <StatsPanel days={readingStatsDays} />
+          <SettingsPanel
+            settings={settings}
+            isOpen={settingsOpen}
+            onToggle={() => setSettingsOpen((previous) => !previous)}
+            onChange={updateSettings}
+          />
+        </aside>
       </div>
     </div>
   );
