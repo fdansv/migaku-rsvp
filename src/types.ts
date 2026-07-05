@@ -58,6 +58,24 @@ export interface Book {
   progress: ReaderPosition;
 }
 
+export interface ReadingSession {
+  id: string;
+  bookId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  wordCount: number;
+  characterCount: number;
+  startLocation?: ReadingSessionLocation;
+  endLocation?: ReadingSessionLocation;
+}
+
+export interface ReadingSessionLocation {
+  position: ReaderPosition;
+  progressCurrent: number;
+  progressTotal: number;
+}
+
 export interface ReaderSettings {
   stepsPerMinute: number;
   fontSize: number;

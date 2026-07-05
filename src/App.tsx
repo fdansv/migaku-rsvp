@@ -8,6 +8,12 @@ import { useBookLibrary } from "./hooks/useBookLibrary";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { useMigakuAdapter } from "./lib/migakuAdapter";
 import {
+  estimateRemainingReadingTime,
+  getDailyReadingStats,
+  getReadingStepStats,
+  type ReadingStepStats,
+} from "./lib/readingStats";
+import {
   advancePosition,
   advanceSentencePosition,
   clampPosition,
@@ -27,12 +33,20 @@ import {
 import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
 import { loadServerAiStatus } from "./lib/serverLibrary";
-import type { Book, ReaderSettings, Sentence } from "./types";
+import { loadReadingSessions, saveReadingSession } from "./lib/storage";
+import type {
+  Book,
+  ReaderSettings,
+  ReadingSession,
+  ReadingSessionLocation,
+  Sentence,
+} from "./types";
 
 const BUFFER_SENTENCES_BEHIND = 20;
 const BUFFER_SENTENCES_AHEAD = 100;
 const BUFFER_WINDOW_SIZE = 40;
 const SERVER_AI_API_URL = "/api/ai/chat";
+const MIN_READING_SESSION_MS = 100;
 const TRANSPORT_KEY_CODES = new Set([
   "Space",
   "ArrowRight",
@@ -49,6 +63,20 @@ interface SentenceTranslation {
   text: string;
   error: string;
   sourceText: string;
+}
+
+interface ActiveReadingSession {
+  id: string;
+  bookId: string;
+  startedAt: string;
+  startedAtMs: number;
+  currentStepKey: string;
+  currentStepStartedAtMs: number;
+  currentStepStats: ReadingStepStats;
+  startLocation: ReadingSessionLocation;
+  currentLocation: ReadingSessionLocation;
+  wordCount: number;
+  characterCount: number;
 }
 
 export function App() {
@@ -84,6 +112,7 @@ export function App() {
   const [sentenceTranslations, setSentenceTranslations] = useState<
     Record<string, SentenceTranslation>
   >({});
+  const [readingSessions, setReadingSessions] = useState<ReadingSession[]>([]);
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
   const playbackTimerRef = useRef<number | null>(null);
@@ -96,11 +125,30 @@ export function App() {
     stepConfig: getStepConfig(settings),
     tokenGroupsBySentenceId: {},
   });
+  const activeReadingSessionRef = useRef<ActiveReadingSession | null>(null);
   const translationRequestsRef = useRef(new Set<string>());
 
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    void loadReadingSessions()
+      .then((sessions) => {
+        if (!canceled) {
+          setReadingSessions(sessions);
+        }
+      })
+      .catch((loadError) => {
+        console.error(loadError);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let canceled = false;
@@ -169,6 +217,10 @@ export function App() {
     () => getProgressStats(safePosition, sentences, stepConfig, tokenGroupsBySentenceId),
     [safePosition, sentences, stepConfig, tokenGroupsBySentenceId],
   );
+  const currentReadingLocation = useMemo(
+    () => getReadingSessionLocation(safePosition, progress),
+    [progress, safePosition],
+  );
   const displayStep = useMemo(
     () =>
       currentSentence
@@ -183,6 +235,17 @@ export function App() {
   const displayTokenKey = `${displayStep.startOffset}:${displayStep.endOffset}:${displayTokenIndexes.join(",")}`;
   const displayText = displayStep.text;
   const stepDelayMs = useMemo(() => getStepDelayMs(settings), [settings.stepsPerMinute]);
+  const readingStatsDays = useMemo(
+    () => getDailyReadingStats(readingSessions),
+    [readingSessions],
+  );
+  const remainingReadingTimeEstimate = useMemo(
+    () =>
+      selectedBookId
+        ? estimateRemainingReadingTime(readingSessions, selectedBookId, progress)
+        : null,
+    [progress, readingSessions, selectedBookId],
+  );
   const activeStepKey = currentSentence
     ? `${currentSentence.id}:${displayStep.startOffset}:${displayStep.endOffset}:${displayTokenIndexes.join(",")}`
     : "";
@@ -375,6 +438,31 @@ export function App() {
   ]);
 
   useEffect(() => {
+    if (!playing || !selectedBookId || !currentSentence) {
+      finishReadingSession(Date.now(), { endLocation: currentReadingLocation });
+      return;
+    }
+
+    updateReadingSessionStep(
+      selectedBookId,
+      activeStepKey,
+      getReadingStepStats(currentSentence, displayStep),
+      currentReadingLocation,
+    );
+  }, [
+    activeStepKey,
+    currentReadingLocation,
+    currentSentence,
+    displayStep,
+    playing,
+    selectedBookId,
+  ]);
+
+  useEffect(() => () => {
+    finishReadingSession(Date.now(), { updateState: false });
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, select, textarea, [contenteditable='true']")) {
@@ -526,6 +614,93 @@ export function App() {
     playbackTimerRef.current = null;
   }
 
+  function updateReadingSessionStep(
+    bookId: string,
+    stepKey: string,
+    stepStats: ReadingStepStats,
+    location: ReadingSessionLocation,
+  ) {
+    const nowMs = Date.now();
+    const active = activeReadingSessionRef.current;
+
+    if (!active || active.bookId !== bookId) {
+      finishReadingSession(nowMs);
+      activeReadingSessionRef.current = {
+        id: createReadingSessionId(),
+        bookId,
+        startedAt: new Date(nowMs).toISOString(),
+        startedAtMs: nowMs,
+        currentStepKey: stepKey,
+        currentStepStartedAtMs: nowMs,
+        currentStepStats: stepStats,
+        startLocation: location,
+        currentLocation: location,
+        wordCount: 0,
+        characterCount: 0,
+      };
+      return;
+    }
+
+    active.currentLocation = location;
+
+    if (active.currentStepKey === stepKey) {
+      return;
+    }
+
+    commitActiveReadingStep(nowMs);
+    active.currentStepKey = stepKey;
+    active.currentStepStartedAtMs = nowMs;
+    active.currentStepStats = stepStats;
+  }
+
+  function commitActiveReadingStep(nowMs = Date.now()) {
+    const active = activeReadingSessionRef.current;
+    if (!active || nowMs <= active.currentStepStartedAtMs) {
+      return;
+    }
+
+    active.wordCount += active.currentStepStats.wordCount;
+    active.characterCount += active.currentStepStats.characterCount;
+    active.currentStepStartedAtMs = nowMs;
+  }
+
+  function finishReadingSession(
+    nowMs = Date.now(),
+    options: { updateState?: boolean; endLocation?: ReadingSessionLocation } = {},
+  ) {
+    const active = activeReadingSessionRef.current;
+    if (!active) {
+      return;
+    }
+
+    commitActiveReadingStep(nowMs);
+    activeReadingSessionRef.current = null;
+
+    const durationMs = Math.max(0, nowMs - active.startedAtMs);
+    if (durationMs < MIN_READING_SESSION_MS) {
+      return;
+    }
+
+    const session: ReadingSession = {
+      id: active.id,
+      bookId: active.bookId,
+      startedAt: active.startedAt,
+      endedAt: new Date(nowMs).toISOString(),
+      durationMs,
+      wordCount: active.wordCount,
+      characterCount: active.characterCount,
+      startLocation: active.startLocation,
+      endLocation: options.endLocation ?? active.currentLocation,
+    };
+
+    if (options.updateState ?? true) {
+      setReadingSessions((previous) => [...previous, session]);
+    }
+    void saveReadingSession(session).catch((saveError) => {
+      console.error(saveError);
+    });
+  }
+
   return (
     <div className="app" data-theme={settings.theme} {...dragHandlers}>
       {isFileDragActive ? <DropOverlay isImporting={isImporting} /> : null}
@@ -580,6 +755,8 @@ export function App() {
         <SettingsPanel
           settings={settings}
           isOpen={settingsOpen}
+          readingStatsDays={readingStatsDays}
+          remainingReadingDurationMs={remainingReadingTimeEstimate?.durationMs ?? null}
           onToggle={() => setSettingsOpen((previous) => !previous)}
           onChange={updateSettings}
         />
@@ -597,6 +774,29 @@ function isSameReaderPosition(
     left.tokenIndex === right.tokenIndex &&
     left.characterOffset === right.characterOffset
   );
+}
+
+function createReadingSessionId() {
+  if ("randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `reading:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+function getReadingSessionLocation(
+  position: { sentenceIndex: number; tokenIndex: number; characterOffset?: number },
+  progress: { current: number; total: number },
+): ReadingSessionLocation {
+  return {
+    position: {
+      sentenceIndex: position.sentenceIndex,
+      tokenIndex: position.tokenIndex,
+      characterOffset: position.characterOffset,
+    },
+    progressCurrent: progress.current,
+    progressTotal: progress.total,
+  };
 }
 
 function getMigakuBufferWindow(

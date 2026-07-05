@@ -1,5 +1,5 @@
 import { openDB, type DBSchema } from "idb";
-import type { Book } from "../types";
+import type { Book, ReadingSession } from "../types";
 
 interface MigakuRsvpDatabase extends DBSchema {
   books: {
@@ -7,12 +7,28 @@ interface MigakuRsvpDatabase extends DBSchema {
     value: Book;
     indexes: { "by-created": string };
   };
+  readingSessions: {
+    key: string;
+    value: ReadingSession;
+    indexes: {
+      "by-book": string;
+      "by-started": string;
+    };
+  };
 }
 
-const dbPromise = openDB<MigakuRsvpDatabase>("migaku-rsvp", 1, {
+const dbPromise = openDB<MigakuRsvpDatabase>("migaku-rsvp", 2, {
   upgrade(db) {
-    const store = db.createObjectStore("books", { keyPath: "id" });
-    store.createIndex("by-created", "createdAt");
+    if (!db.objectStoreNames.contains("books")) {
+      const store = db.createObjectStore("books", { keyPath: "id" });
+      store.createIndex("by-created", "createdAt");
+    }
+
+    if (!db.objectStoreNames.contains("readingSessions")) {
+      const store = db.createObjectStore("readingSessions", { keyPath: "id" });
+      store.createIndex("by-book", "bookId");
+      store.createIndex("by-started", "startedAt");
+    }
   },
 });
 
@@ -32,3 +48,13 @@ export async function deleteBook(bookId: string) {
   await db.delete("books", bookId);
 }
 
+export async function loadReadingSessions() {
+  const db = await dbPromise;
+  const sessions = await db.getAll("readingSessions");
+  return sessions.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+
+export async function saveReadingSession(session: ReadingSession) {
+  const db = await dbPromise;
+  await db.put("readingSessions", session);
+}
