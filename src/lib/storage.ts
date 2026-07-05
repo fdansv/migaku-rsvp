@@ -1,6 +1,8 @@
 import { openDB, type DBSchema } from "idb";
 import type { Book, ReadingSession } from "../types";
 
+const SELECTED_BOOK_ID_KEY = "migaku-rsvp:selected-book-id";
+
 interface MigakuRsvpDatabase extends DBSchema {
   books: {
     key: string;
@@ -57,4 +59,16 @@ export async function loadReadingSessions() {
 export async function saveReadingSession(session: ReadingSession) {
   const db = await dbPromise;
   await db.put("readingSessions", session);
+}
+
+export function loadSelectedBookId() {
+  return localStorage.getItem(SELECTED_BOOK_ID_KEY);
+}
+
+export function saveSelectedBookId(bookId: string | null) {
+  if (bookId) {
+    localStorage.setItem(SELECTED_BOOK_ID_KEY, bookId);
+  } else {
+    localStorage.removeItem(SELECTED_BOOK_ID_KEY);
+  }
 }
