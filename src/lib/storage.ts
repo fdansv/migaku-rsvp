@@ -1,6 +1,8 @@
 import { openDB, type DBSchema } from "idb";
 import type { Book } from "../types";
 
+const SELECTED_BOOK_ID_KEY = "migaku-rsvp:selected-book-id";
+
 interface MigakuRsvpDatabase extends DBSchema {
   books: {
     key: string;
@@ -32,3 +34,14 @@ export async function deleteBook(bookId: string) {
   await db.delete("books", bookId);
 }
 
+export function loadSelectedBookId() {
+  return localStorage.getItem(SELECTED_BOOK_ID_KEY);
+}
+
+export function saveSelectedBookId(bookId: string | null) {
+  if (bookId) {
+    localStorage.setItem(SELECTED_BOOK_ID_KEY, bookId);
+  } else {
+    localStorage.removeItem(SELECTED_BOOK_ID_KEY);
+  }
+}

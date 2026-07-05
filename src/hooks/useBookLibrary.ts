@@ -9,7 +9,13 @@ import {
   uploadServerBook,
   type ServerBookEntry,
 } from "../lib/serverLibrary";
-import { deleteBook, loadBooks, saveBook } from "../lib/storage";
+import {
+  deleteBook,
+  loadBooks,
+  loadSelectedBookId,
+  saveBook,
+  saveSelectedBookId,
+} from "../lib/storage";
 import { CURRENT_TOKENIZER_VERSION, tokenizeJapanese, warmJapaneseTokenizer } from "../lib/text";
 import type { Book, ReaderPosition } from "../types";
 
@@ -91,12 +97,18 @@ export function useBookLibrary() {
         setServerLibraryEnabled(serverLibrary.enabled);
         const serverBooks = serverLibrary.books;
         const nextBooks = [...serverBooks, ...upgradedBooks];
+        const savedBookId = loadSelectedBookId();
+        const initialBook =
+          nextBooks.find((book) => book.id === savedBookId) ?? nextBooks[0] ?? null;
+
         setBooks(nextBooks);
-        if (nextBooks[0]) {
-          setSelectedBookId(nextBooks[0].id);
-          setPosition(nextBooks[0].progress);
-          if (nextBooks[0].source === "server") {
-            void hydrateServerBook(nextBooks[0]);
+        saveSelectedBookId(initialBook?.id ?? null);
+
+        if (initialBook) {
+          setSelectedBookId(initialBook.id);
+          setPosition(initialBook.progress);
+          if (initialBook.source === "server") {
+            void hydrateServerBook(initialBook);
           }
         }
       })
@@ -133,6 +145,7 @@ export function useBookLibrary() {
           serverBook,
           ...currentBooks.filter((candidate) => candidate.id !== serverBook.id),
         ]);
+        saveSelectedBookId(serverBook.id);
         setSelectedBookId(serverBook.id);
         setPosition(serverBook.progress);
         return;
@@ -145,6 +158,7 @@ export function useBookLibrary() {
         localBook,
         ...currentBooks.filter((candidate) => candidate.id !== localBook.id),
       ]);
+      saveSelectedBookId(localBook.id);
       setSelectedBookId(localBook.id);
       setPosition(localBook.progress);
     } catch (importError) {
@@ -155,6 +169,7 @@ export function useBookLibrary() {
   }, [serverLibraryEnabled]);
 
   const selectBook = useCallback((book: Book) => {
+    saveSelectedBookId(book.id);
     setSelectedBookId(book.id);
     setPosition(book.progress);
     if (book.source === "server" && book.chapters.length === 0) {
@@ -173,8 +188,10 @@ export function useBookLibrary() {
       setBooks((currentBooks) => {
         const nextBooks = currentBooks.filter((book) => book.id !== bookId);
         if (selectedBookId === bookId) {
-          setSelectedBookId(nextBooks[0]?.id ?? null);
-          setPosition(nextBooks[0]?.progress ?? EMPTY_POSITION);
+          const nextBook = nextBooks[0] ?? null;
+          saveSelectedBookId(nextBook?.id ?? null);
+          setSelectedBookId(nextBook?.id ?? null);
+          setPosition(nextBook?.progress ?? EMPTY_POSITION);
         }
         return nextBooks;
       });

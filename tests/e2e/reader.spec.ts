@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createSmallEpub } from "../fixtures/createSmallEpub";
+import type { ReaderPosition } from "../../src/types";
 
 test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page }, testInfo) => {
   const epubPath = path.join(testInfo.outputDir, "small.epub");
@@ -219,6 +220,125 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
     .poll(() => activeRsvpToken(page).getAttribute("data-mgk-term"))
     .not.toBe("走る");
   await expect(activeRsvpToken(page)).not.toHaveClass(/unknown/);
+});
+
+test("restores the selected server-library book after refresh", async ({ page }, testInfo) => {
+  const firstEpubPath = path.join(testInfo.outputDir, "server-first.epub");
+  const secondEpubPath = path.join(testInfo.outputDir, "server-second.epub");
+  await createSmallEpub(firstEpubPath, ["一番目。"]);
+  await createSmallEpub(secondEpubPath, ["二番目。"]);
+
+  const firstBytes = await fs.readFile(firstEpubPath);
+  const secondBytes = await fs.readFile(secondEpubPath);
+  const serverBooks = [
+    {
+      id: "server-first",
+      fileName: "server-first.epub",
+      relativePath: "server-first.epub",
+      modifiedAt: "2026-07-05T00:00:00.000Z",
+      size: firstBytes.byteLength,
+    },
+    {
+      id: "server-second",
+      fileName: "server-second.epub",
+      relativePath: "server-second.epub",
+      modifiedAt: "2026-07-04T00:00:00.000Z",
+      size: secondBytes.byteLength,
+    },
+  ];
+  const epubBytesByBookId = new Map([
+    ["server-first", firstBytes],
+    ["server-second", secondBytes],
+  ]);
+  const progressByBookId: Record<string, ReaderPosition> = {
+    "server-first": { sentenceIndex: 0, tokenIndex: 0 },
+    "server-second": { sentenceIndex: 0, tokenIndex: 0 },
+  };
+
+  await page.route("**/api/library/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      json: { enabled: true, bookCount: serverBooks.length },
+    });
+  });
+  await page.route("**/api/books", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fulfill({ status: 405, json: { error: "Method not allowed." } });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      json: serverBooks.map((book) => ({
+        ...book,
+        progress: progressByBookId[book.id],
+      })),
+    });
+  });
+  await page.route(/\/api\/books\/[^/]+\/file$/, async (route) => {
+    const bookId = decodeURIComponent(
+      new URL(route.request().url()).pathname.split("/")[3] ?? "",
+    );
+    const epubBytes = epubBytesByBookId.get(bookId);
+
+    if (!epubBytes) {
+      await route.fulfill({ status: 404, json: { error: "Book not found." } });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      body: epubBytes,
+      headers: { "Content-Type": "application/epub+zip" },
+    });
+  });
+  await page.route(/\/api\/books\/[^/]+\/progress$/, async (route) => {
+    const request = route.request();
+    const bookId = decodeURIComponent(
+      new URL(request.url()).pathname.split("/")[3] ?? "",
+    );
+
+    if (!(bookId in progressByBookId)) {
+      await route.fulfill({ status: 404, json: { error: "Book not found." } });
+      return;
+    }
+
+    if (request.method() === "GET") {
+      await route.fulfill({ status: 200, json: progressByBookId[bookId] });
+      return;
+    }
+
+    if (request.method() === "PUT") {
+      progressByBookId[bookId] = request.postDataJSON() as ReaderPosition;
+      await route.fulfill({ status: 200, json: progressByBookId[bookId] });
+      return;
+    }
+
+    await route.fulfill({ status: 405, json: { error: "Method not allowed." } });
+  });
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("一番目。", {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "server-second Server library" }).click();
+  await expect(page.locator(".rsvp-token-display")).toHaveText("二番目。", {
+    timeout: 30_000,
+  });
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("migaku-rsvp:selected-book-id")))
+    .toBe("server-second");
+
+  await page.reload();
+  await expect(page.locator(".rsvp-token-display")).toHaveText("二番目。", {
+    timeout: 30_000,
+  });
 });
 
 test("uses Migaku token boundaries when Migaku spans multiple fallback tokens", async ({
