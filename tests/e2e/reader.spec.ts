@@ -353,6 +353,13 @@ test("loads server reading stats and migrates local reading sessions", async ({ 
     durationMs: 12 * 60_000,
     characterCount: 480,
   });
+  const olderServerSession = createReadingSessionFixture({
+    id: "older-server-session",
+    bookId: "server-book",
+    startedAtMs: nowMs - 10 * 24 * 60 * 60_000,
+    durationMs: 4 * 60_000,
+    characterCount: 16,
+  });
   const localSession = createReadingSessionFixture({
     id: "local-session",
     bookId: "server-book",
@@ -371,7 +378,7 @@ test("loads server reading stats and migrates local reading sessions", async ({ 
   await page.route("**/api/reading-sessions", async (route) => {
     const request = route.request();
     if (request.method() === "GET") {
-      await route.fulfill({ status: 200, json: [serverSession] });
+      await route.fulfill({ status: 200, json: [olderServerSession, serverSession] });
       return;
     }
 
@@ -420,6 +427,17 @@ test("loads server reading stats and migrates local reading sessions", async ({ 
     .toHaveText("17m");
   await expect(page.locator(".stats-summary span", { hasText: "Chars" }).locator("strong"))
     .toHaveText("600");
+  await expect(page.locator(".reading-chart-day")).toHaveCount(11);
+  const todayChartBar = page.locator(".reading-chart-bar-track").last();
+  const todayChartTooltip = page.locator(".reading-chart-tooltip").last();
+  await expect(todayChartTooltip).toBeHidden();
+  await todayChartBar.hover();
+  await expect(todayChartTooltip).toHaveText("17 min");
+  await expect(todayChartTooltip).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(todayChartTooltip).toBeHidden();
+  await todayChartBar.click();
+  await expect(todayChartTooltip).toBeVisible();
   await expect.poll(() => migratedSessions).toContainEqual(localSession);
 });
 

@@ -51,6 +51,7 @@ import type {
 const BUFFER_SENTENCES_BEHIND = 20;
 const BUFFER_SENTENCES_AHEAD = 100;
 const BUFFER_WINDOW_SIZE = 40;
+const READING_STATS_DAY_COUNT = 31;
 const SERVER_AI_API_URL = "/api/ai/chat";
 const MIN_READING_SESSION_MS = 100;
 const TRANSPORT_KEY_CODES = new Set([
@@ -244,7 +245,7 @@ export function App() {
   const displayText = displayStep.text;
   const stepDelayMs = useMemo(() => getStepDelayMs(settings), [settings.stepsPerMinute]);
   const readingStatsDays = useMemo(
-    () => getDailyReadingStats(readingSessions),
+    () => getDailyReadingStats(readingSessions, new Date(), READING_STATS_DAY_COUNT),
     [readingSessions],
   );
   const remainingReadingTimeEstimate = useMemo(
