@@ -250,7 +250,7 @@ describe("recap helpers", () => {
     });
     expect(init?.headers).not.toHaveProperty("Authorization");
     expect(JSON.parse(String(init?.body))).toMatchObject({
-      max_completion_tokens: 120,
+      max_completion_tokens: 320,
     });
   });
 

@@ -1,11 +1,9 @@
 import type { Book, ReaderSettings, Sentence } from "../types";
 
 export const RECAP_PAGE_LIMIT = 3;
-export const SERVER_RECAP_CONTEXT_CHARS = 1_200;
 
 const MAX_RECAP_CONTEXT_CHARS = 8_000;
 const MAX_RECAP_TOKENS = 320;
-const SERVER_RECAP_TOKENS = 120;
 const MAX_TRANSLATION_TOKENS = 160;
 const REASONING_FALLBACK_TOKENS = 2_000;
 
@@ -92,7 +90,7 @@ export async function generateAiRecap({
         content: buildRecapPrompt(bookTitle, pages),
       },
     ],
-    maxTokens: isServerAiProxyUrl(apiUrl) ? SERVER_RECAP_TOKENS : MAX_RECAP_TOKENS,
+    maxTokens: MAX_RECAP_TOKENS,
     emptyResponseError: "The AI response did not include a readable summary.",
   });
 }

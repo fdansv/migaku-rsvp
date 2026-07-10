@@ -31,12 +31,7 @@ import {
   type ReaderStepConfig,
   type TokenGroupsBySentenceId,
 } from "./lib/rsvp";
-import {
-  SERVER_RECAP_CONTEXT_CHARS,
-  generateAiRecap,
-  generateAiSentenceTranslation,
-  getRecapPages,
-} from "./lib/recap";
+import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
 import {
   isServerLibraryEnabled,
@@ -596,13 +591,7 @@ export function App() {
     setAutoPaused(false);
     stopPlayback();
 
-    const usesServerAi = settings.recapApiUrl.trim() === SERVER_AI_API_URL;
-    const pages = getRecapPages(
-      selectedBook,
-      currentSentence,
-      usesServerAi ? 1 : undefined,
-      usesServerAi ? SERVER_RECAP_CONTEXT_CHARS : undefined,
-    );
+    const pages = getRecapPages(selectedBook, currentSentence);
     const sourceLabel =
       pages.length === 1 ? "1 previous page" : pages.length > 1 ? `${pages.length} previous pages` : "";
 
