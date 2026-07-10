@@ -32,10 +32,17 @@ const AI_API_KEY =
   normalizeEnvString(process.env.MIGAKU_RSVP_AI_API_KEY) ??
   normalizeEnvString(process.env.OPENAI_API_KEY) ??
   "";
-const AI_RECAP_MODEL =
-  normalizeEnvString(process.env.MIGAKU_RSVP_AI_RECAP_MODEL) ??
+const AI_DEFAULT_MODEL =
+  normalizeEnvString(process.env.MIGAKU_RSVP_AI_MODEL) ??
   normalizeEnvString(process.env.OPENAI_MODEL) ??
   "";
+const AI_RECAP_MODEL =
+  normalizeEnvString(process.env.MIGAKU_RSVP_AI_RECAP_MODEL) ??
+  AI_DEFAULT_MODEL;
+const AI_TRANSLATION_MODEL =
+  normalizeEnvString(process.env.MIGAKU_RSVP_AI_TRANSLATION_MODEL) ??
+  AI_RECAP_MODEL;
+const AI_TOKEN_PARAMETER = normalizeAiTokenParameter(process.env.MIGAKU_RSVP_AI_TOKEN_PARAMETER);
 let readingSessionsWriteQueue = Promise.resolve();
 
 const MIME_TYPES = new Map([
@@ -84,6 +91,7 @@ async function routeApiRequest(request, response, url) {
       enabled: Boolean(AI_API_KEY),
       apiUrl: "/api/ai/chat",
       recapModel: AI_RECAP_MODEL,
+      translationModel: AI_TRANSLATION_MODEL,
     });
     return;
   }
@@ -205,10 +213,7 @@ async function routeAiProxyRequest(request, response) {
     return;
   }
 
-  const upstreamPayload = { ...payload };
-  if (!upstreamPayload.model && AI_RECAP_MODEL) {
-    upstreamPayload.model = AI_RECAP_MODEL;
-  }
+  const upstreamPayload = buildAiProxyPayload(payload);
 
   let upstreamResponse;
   try {
@@ -606,6 +611,40 @@ function readJsonBody(request, maxBytes = MAX_JSON_BODY_BYTES) {
 
 function normalizeEnvString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeAiTokenParameter(value) {
+  const normalized = normalizeEnvString(value);
+  return normalized === "max_tokens" || normalized === "max_completion_tokens"
+    ? normalized
+    : "auto";
+}
+
+function buildAiProxyPayload(payload) {
+  const upstreamPayload = { ...payload };
+  if (!upstreamPayload.model && AI_RECAP_MODEL) {
+    upstreamPayload.model = AI_RECAP_MODEL;
+  }
+
+  if (
+    AI_TOKEN_PARAMETER === "max_tokens" &&
+    typeof upstreamPayload.max_completion_tokens === "number" &&
+    upstreamPayload.max_tokens === undefined
+  ) {
+    upstreamPayload.max_tokens = upstreamPayload.max_completion_tokens;
+    delete upstreamPayload.max_completion_tokens;
+  }
+
+  if (
+    AI_TOKEN_PARAMETER === "max_completion_tokens" &&
+    typeof upstreamPayload.max_tokens === "number" &&
+    upstreamPayload.max_completion_tokens === undefined
+  ) {
+    upstreamPayload.max_completion_tokens = upstreamPayload.max_tokens;
+    delete upstreamPayload.max_tokens;
+  }
+
+  return upstreamPayload;
 }
 
 async function fileExists(filePath) {

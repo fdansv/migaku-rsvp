@@ -53,6 +53,11 @@ export function normalizeSettings(value: StoredSettings): ReaderSettings {
     recapApiUrl: normalizeString(value.recapApiUrl, DEFAULT_SETTINGS.recapApiUrl, 2_048),
     recapApiKey: normalizeString(value.recapApiKey, DEFAULT_SETTINGS.recapApiKey, 4_096),
     recapModel: normalizeString(value.recapModel, DEFAULT_SETTINGS.recapModel, 256),
+    translationModel: normalizeString(
+      value.translationModel,
+      DEFAULT_SETTINGS.translationModel,
+      256,
+    ),
   };
 }
 

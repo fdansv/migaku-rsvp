@@ -147,13 +147,23 @@ export function SettingsPanel({
             />
           </label>
           <label>
-            Model
+            Summary model
             <input
               type="text"
               value={settings.recapModel}
               autoComplete="off"
               spellCheck={false}
               onChange={(event) => onChange({ recapModel: event.currentTarget.value })}
+            />
+          </label>
+          <label>
+            Translation model
+            <input
+              type="text"
+              value={settings.translationModel}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => onChange({ translationModel: event.currentTarget.value })}
             />
           </label>
         </div>

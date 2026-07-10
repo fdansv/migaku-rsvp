@@ -51,6 +51,20 @@ describe("recap helpers", () => {
     ]);
   });
 
+  it("can trim recap context for constrained local server models", () => {
+    const book = makeBook([
+      ["前の文。"],
+      ["あ".repeat(1_500), "現在の文。"],
+    ]);
+    const currentSentence = book.chapters[1].sentences[1];
+
+    const pages = getRecapPages(book, currentSentence, 1, 20);
+
+    expect(pages).toHaveLength(1);
+    expect(pages[0].text).toHaveLength(20);
+    expect(pages[0].text).toBe("あ".repeat(20));
+  });
+
   it("builds the recap prompt without including provider details", () => {
     const prompt = buildRecapPrompt("本", [{ index: 0, title: "第一章", text: "猫が走る。" }]);
 
@@ -131,6 +145,7 @@ describe("recap helpers", () => {
       recapApiUrl: "https://example.invalid/chat",
       recapApiKey: "user-entered-key",
       recapModel: "user-entered-model",
+      translationModel: "user-entered-translation-model",
     };
 
     await expect(
@@ -148,11 +163,36 @@ describe("recap helpers", () => {
     });
     const payload = JSON.parse(String(init?.body));
     expect(payload).toMatchObject({
-      model: "gpt-5.4-nano",
+      model: "user-entered-translation-model",
       max_completion_tokens: 160,
       reasoning_effort: "none",
     });
     expect(payload.messages[1].content).toContain("猫が走る。");
+  });
+
+  it("falls back to the recap model for sentence translations", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: "The cat runs." } }] }), {
+        status: 200,
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    await generateAiSentenceTranslation({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        recapApiUrl: "https://example.invalid/chat",
+        recapApiKey: "user-entered-key",
+        recapModel: "shared-local-model",
+        translationModel: "",
+      },
+      sentenceText: "猫が走る。",
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      model: "shared-local-model",
+    });
   });
 
   it("allows same-origin server AI proxy requests without a browser API key", async () => {
@@ -181,6 +221,37 @@ describe("recap helpers", () => {
       "Content-Type": "application/json",
     });
     expect(init?.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("allows same-origin server AI recap requests without a browser API key", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Summary." } }] }), {
+        status: 200,
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      generateAiRecap({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          recapApiUrl: "/api/ai/chat",
+          recapApiKey: "",
+          recapModel: "local-summary-model",
+        },
+        bookTitle: "本",
+        pages: [{ index: 0, title: "第一章", text: "猫が走る。" }],
+      }),
+    ).resolves.toBe("Summary.");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init?.headers).toMatchObject({
+      "Content-Type": "application/json",
+    });
+    expect(init?.headers).not.toHaveProperty("Authorization");
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      max_completion_tokens: 120,
+    });
   });
 
   it("switches to max_tokens when the model rejects max_completion_tokens", async () => {

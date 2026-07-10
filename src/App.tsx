@@ -31,7 +31,12 @@ import {
   type ReaderStepConfig,
   type TokenGroupsBySentenceId,
 } from "./lib/rsvp";
-import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
+import {
+  SERVER_RECAP_CONTEXT_CHARS,
+  generateAiRecap,
+  generateAiSentenceTranslation,
+  getRecapPages,
+} from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
 import {
   isServerLibraryEnabled,
@@ -168,14 +173,19 @@ export function App() {
       }
 
       setSettings((previous) => {
-        if (previous.recapApiUrl.trim() || previous.recapApiKey.trim()) {
+        const previousApiUrl = previous.recapApiUrl.trim();
+        const usesServerApi =
+          previousApiUrl === SERVER_AI_API_URL ||
+          (!previousApiUrl && !previous.recapApiKey.trim());
+        if (!usesServerApi) {
           return previous;
         }
 
         return {
           ...previous,
-          recapApiUrl: status.apiUrl || SERVER_AI_API_URL,
-          recapModel: previous.recapModel || status.recapModel,
+          recapApiUrl: previousApiUrl || status.apiUrl || SERVER_AI_API_URL,
+          recapModel: status.recapModel || previous.recapModel,
+          translationModel: status.translationModel || previous.translationModel,
         };
       });
     });
@@ -316,7 +326,7 @@ export function App() {
   useEffect(() => {
     setSentenceTranslations({});
     translationRequestsRef.current.clear();
-  }, [settings.recapApiUrl, settings.recapApiKey]);
+  }, [settings.recapApiUrl, settings.recapApiKey, settings.recapModel, settings.translationModel]);
 
   useEffect(() => {
     if (!currentSentence || !shouldTranslateCurrentSentence) {
@@ -586,7 +596,13 @@ export function App() {
     setAutoPaused(false);
     stopPlayback();
 
-    const pages = getRecapPages(selectedBook, currentSentence);
+    const usesServerAi = settings.recapApiUrl.trim() === SERVER_AI_API_URL;
+    const pages = getRecapPages(
+      selectedBook,
+      currentSentence,
+      usesServerAi ? 1 : undefined,
+      usesServerAi ? SERVER_RECAP_CONTEXT_CHARS : undefined,
+    );
     const sourceLabel =
       pages.length === 1 ? "1 previous page" : pages.length > 1 ? `${pages.length} previous pages` : "";
 

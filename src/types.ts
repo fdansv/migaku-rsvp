@@ -87,6 +87,7 @@ export interface ReaderSettings {
   recapApiUrl: string;
   recapApiKey: string;
   recapModel: string;
+  translationModel: string;
 }
 
 export interface MigakuScanResult {

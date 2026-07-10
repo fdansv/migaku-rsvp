@@ -80,12 +80,14 @@ describe("settings persistence", () => {
       recapApiUrl: " user-entered-url ",
       recapApiKey: " user-entered-key ",
       recapModel: " user-entered-model ",
+      translationModel: " user-entered-translation-model ",
     });
 
     expect(loadSettings()).toMatchObject({
       recapApiUrl: "user-entered-url",
       recapApiKey: "user-entered-key",
       recapModel: "user-entered-model",
+      translationModel: "user-entered-translation-model",
     });
   });
 });

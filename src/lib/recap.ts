@@ -1,11 +1,12 @@
 import type { Book, ReaderSettings, Sentence } from "../types";
 
 export const RECAP_PAGE_LIMIT = 3;
+export const SERVER_RECAP_CONTEXT_CHARS = 1_200;
 
 const MAX_RECAP_CONTEXT_CHARS = 8_000;
 const MAX_RECAP_TOKENS = 320;
+const SERVER_RECAP_TOKENS = 120;
 const MAX_TRANSLATION_TOKENS = 160;
-const TRANSLATION_MODEL = "gpt-5.4-nano";
 const REASONING_FALLBACK_TOKENS = 2_000;
 
 export interface RecapPage {
@@ -18,6 +19,7 @@ export function getRecapPages(
   book: Book | undefined,
   currentSentence: Sentence | undefined,
   pageLimit = RECAP_PAGE_LIMIT,
+  maxContextChars = MAX_RECAP_CONTEXT_CHARS,
 ) {
   if (!book || !currentSentence) {
     return [];
@@ -54,7 +56,7 @@ export function getRecapPages(
     }
   }
 
-  return trimRecapPages(pages.reverse(), MAX_RECAP_CONTEXT_CHARS);
+  return trimRecapPages(pages.reverse(), maxContextChars);
 }
 
 export async function generateAiRecap({
@@ -69,7 +71,7 @@ export async function generateAiRecap({
   const apiUrl = settings.recapApiUrl.trim();
   const apiKey = settings.recapApiKey.trim();
 
-  if (!apiUrl || !apiKey) {
+  if (!apiUrl || (!apiKey && !isServerAiProxyUrl(apiUrl))) {
     throw new Error("Add an AI URL and API key in Settings.");
   }
 
@@ -90,7 +92,7 @@ export async function generateAiRecap({
         content: buildRecapPrompt(bookTitle, pages),
       },
     ],
-    maxTokens: MAX_RECAP_TOKENS,
+    maxTokens: isServerAiProxyUrl(apiUrl) ? SERVER_RECAP_TOKENS : MAX_RECAP_TOKENS,
     emptyResponseError: "The AI response did not include a readable summary.",
   });
 }
@@ -99,7 +101,10 @@ export async function generateAiSentenceTranslation({
   settings,
   sentenceText,
 }: {
-  settings: Pick<ReaderSettings, "recapApiKey" | "recapApiUrl" | "recapModel">;
+  settings: Pick<
+    ReaderSettings,
+    "recapApiKey" | "recapApiUrl" | "recapModel" | "translationModel"
+  >;
   sentenceText: string;
 }) {
   const text = sentenceText.trim();
@@ -121,7 +126,7 @@ export async function generateAiSentenceTranslation({
       },
     ],
     maxTokens: MAX_TRANSLATION_TOKENS,
-    model: TRANSLATION_MODEL,
+    model: settings.translationModel.trim() || settings.recapModel.trim(),
     reasoningEffort: "none",
     emptyResponseError: "The AI response did not include a readable translation.",
   });

@@ -15,6 +15,7 @@ export interface ServerAiStatus {
   enabled: boolean;
   apiUrl: string;
   recapModel: string;
+  translationModel: string;
 }
 
 export async function loadServerAiStatus() {

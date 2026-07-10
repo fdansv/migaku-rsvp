@@ -31,6 +31,12 @@ Optional environment variables:
 - `PORT`: server port, defaults to `4173`.
 - `HOST`: bind host, defaults to `0.0.0.0`.
 - `MIGAKU_RSVP_PROGRESS_PATH`: custom JSON progress file path.
+- `MIGAKU_RSVP_AI_API_URL`: OpenAI-compatible chat completions endpoint for summaries and sentence translations.
+- `MIGAKU_RSVP_AI_API_KEY`: API key used by the server proxy. For local endpoints that ignore auth, set any non-empty placeholder.
+- `MIGAKU_RSVP_AI_MODEL`: default model name for the server AI proxy.
+- `MIGAKU_RSVP_AI_RECAP_MODEL`: optional summary model override.
+- `MIGAKU_RSVP_AI_TRANSLATION_MODEL`: optional sentence translation model override.
+- `MIGAKU_RSVP_AI_TOKEN_PARAMETER`: optional token-limit parameter override, either `max_tokens` or `max_completion_tokens`.
 
 ## Migaku Behavior
 

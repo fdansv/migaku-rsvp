@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   recapApiUrl: "",
   recapApiKey: "",
   recapModel: "",
+  translationModel: "",
 };
 
 export function flattenSentences(book?: { chapters: { sentences: Sentence[] }[] }) {
