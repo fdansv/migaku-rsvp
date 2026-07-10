@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createSmallEpub } from "../fixtures/createSmallEpub";
-import type { ReaderPosition } from "../../src/types";
+import type { ReaderPosition, ReadingSession } from "../../src/types";
 
 test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page }, testInfo) => {
   const epubPath = path.join(testInfo.outputDir, "small.epub");
@@ -316,6 +316,9 @@ test("restores the selected server-library book after refresh", async ({ page },
 
     await route.fulfill({ status: 405, json: { error: "Method not allowed." } });
   });
+  await page.route("**/api/reading-sessions", async (route) => {
+    await route.fulfill({ status: 200, json: [] });
+  });
 
   await page.goto("/");
   await page.evaluate(async () => {
@@ -339,6 +342,85 @@ test("restores the selected server-library book after refresh", async ({ page },
   await expect(page.locator(".rsvp-token-display")).toHaveText("二番目。", {
     timeout: 30_000,
   });
+});
+
+test("loads server reading stats and migrates local reading sessions", async ({ page }) => {
+  const nowMs = Date.now();
+  const serverSession = createReadingSessionFixture({
+    id: "server-session",
+    bookId: "server-book",
+    startedAtMs: nowMs - 12 * 60_000,
+    durationMs: 12 * 60_000,
+    characterCount: 480,
+  });
+  const localSession = createReadingSessionFixture({
+    id: "local-session",
+    bookId: "server-book",
+    startedAtMs: nowMs - 5 * 60_000,
+    durationMs: 5 * 60_000,
+    characterCount: 120,
+  });
+  const migratedSessions: unknown[] = [];
+
+  await page.route("**/api/library/status", async (route) => {
+    await route.fulfill({ status: 200, json: { enabled: true, bookCount: 0 } });
+  });
+  await page.route("**/api/books", async (route) => {
+    await route.fulfill({ status: 200, json: [] });
+  });
+  await page.route("**/api/reading-sessions", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      await route.fulfill({ status: 200, json: [serverSession] });
+      return;
+    }
+
+    if (request.method() === "POST") {
+      migratedSessions.push(request.postDataJSON());
+      await route.fulfill({ status: 200, json: request.postDataJSON() });
+      return;
+    }
+
+    await route.fulfill({ status: 405, json: { error: "Method not allowed." } });
+  });
+
+  await page.goto("/");
+  await page.evaluate(async (session) => {
+    localStorage.clear();
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("migaku-rsvp", 2);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains("books")) {
+          const store = database.createObjectStore("books", { keyPath: "id" });
+          store.createIndex("by-created", "createdAt");
+        }
+        if (!database.objectStoreNames.contains("readingSessions")) {
+          const store = database.createObjectStore("readingSessions", { keyPath: "id" });
+          store.createIndex("by-book", "bookId");
+          store.createIndex("by-started", "startedAt");
+        }
+      };
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("readingSessions", "readwrite");
+        transaction.objectStore("readingSessions").put(session);
+        transaction.onerror = () => reject(transaction.error);
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+      };
+    });
+  }, localSession);
+  await page.reload();
+
+  await expect(page.locator(".stats-summary span", { hasText: "Today" }).locator("strong"))
+    .toHaveText("17m");
+  await expect(page.locator(".stats-summary span", { hasText: "Chars" }).locator("strong"))
+    .toHaveText("600");
+  await expect.poll(() => migratedSessions).toContainEqual(localSession);
 });
 
 test("uses Migaku token boundaries when Migaku spans multiple fallback tokens", async ({
@@ -1257,6 +1339,40 @@ async function expectProgressCurrent(page: Page, current: number) {
   await expect(page.locator(".reader-progress-value--full")).toHaveText(
     `${Math.round((current / Number(total)) * 100)}%`,
   );
+}
+
+function createReadingSessionFixture({
+  id,
+  bookId,
+  startedAtMs,
+  durationMs,
+  characterCount,
+}: {
+  id: string;
+  bookId: string;
+  startedAtMs: number;
+  durationMs: number;
+  characterCount: number;
+}): ReadingSession {
+  return {
+    id,
+    bookId,
+    startedAt: new Date(startedAtMs).toISOString(),
+    endedAt: new Date(startedAtMs + durationMs).toISOString(),
+    durationMs,
+    wordCount: Math.max(1, Math.round(characterCount / 4)),
+    characterCount,
+    startLocation: {
+      position: { sentenceIndex: 0, tokenIndex: 0 },
+      progressCurrent: 1,
+      progressTotal: 100,
+    },
+    endLocation: {
+      position: { sentenceIndex: 0, tokenIndex: 1 },
+      progressCurrent: 2,
+      progressTotal: 100,
+    },
+  };
 }
 
 async function dispatchTransportKey(page: Page, code: string, repeat: boolean) {

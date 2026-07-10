@@ -1,4 +1,4 @@
-import type { ReaderPosition } from "../types";
+import type { ReaderPosition, ReadingSession } from "../types";
 
 const API_BASE = "/api";
 
@@ -113,6 +113,32 @@ export async function saveServerBookProgress(bookId: string, progress: ReaderPos
   });
   if (!response.ok) {
     throw new Error("Could not save server reading progress.");
+  }
+}
+
+export async function loadServerReadingSessions() {
+  const response = await fetch(`${API_BASE}/reading-sessions`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error("Could not load server reading stats.");
+  }
+
+  return (await response.json()) as ReadingSession[];
+}
+
+export async function saveServerReadingSession(session: ReadingSession) {
+  const response = await fetch(`${API_BASE}/reading-sessions`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(session),
+  });
+  if (!response.ok) {
+    throw new Error("Could not save server reading stats.");
   }
 }
 

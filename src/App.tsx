@@ -33,7 +33,12 @@ import {
 } from "./lib/rsvp";
 import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
-import { loadServerAiStatus } from "./lib/serverLibrary";
+import {
+  isServerLibraryEnabled,
+  loadServerAiStatus,
+  loadServerReadingSessions,
+  saveServerReadingSession,
+} from "./lib/serverLibrary";
 import { loadReadingSessions, saveReadingSession } from "./lib/storage";
 import type {
   Book,
@@ -128,6 +133,7 @@ export function App() {
   });
   const activeReadingSessionRef = useRef<ActiveReadingSession | null>(null);
   const translationRequestsRef = useRef(new Set<string>());
+  const serverReadingSessionsEnabledRef = useRef(false);
 
   useEffect(() => {
     saveSettings(settings);
@@ -136,9 +142,10 @@ export function App() {
   useEffect(() => {
     let canceled = false;
 
-    void loadReadingSessions()
-      .then((sessions) => {
+    void loadReadingSessionStore()
+      .then(({ sessions, serverEnabled }) => {
         if (!canceled) {
+          serverReadingSessionsEnabledRef.current = serverEnabled;
           setReadingSessions(sessions);
         }
       })
@@ -700,6 +707,11 @@ export function App() {
     void saveReadingSession(session).catch((saveError) => {
       console.error(saveError);
     });
+    if (serverReadingSessionsEnabledRef.current) {
+      void saveServerReadingSession(session).catch((saveError) => {
+        console.error(saveError);
+      });
+    }
   }
 
   return (
@@ -785,6 +797,54 @@ function createReadingSessionId() {
   }
 
   return `reading:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+async function loadReadingSessionStore() {
+  const localSessions = await loadReadingSessions();
+
+  if (!(await isServerLibraryEnabled())) {
+    return { sessions: localSessions, serverEnabled: false };
+  }
+
+  try {
+    const serverSessions = await loadServerReadingSessions();
+    const serverSessionIds = new Set(serverSessions.map((session) => session.id));
+    const localOnlySessions = localSessions.filter((session) => !serverSessionIds.has(session.id));
+
+    if (localOnlySessions.length > 0) {
+      void Promise.allSettled(
+        localOnlySessions.map((session) => saveServerReadingSession(session)),
+      ).then((results) => {
+        const failed = results.filter((result) => result.status === "rejected");
+        if (failed.length > 0) {
+          console.error(`Could not migrate ${failed.length} local reading session(s) to server.`);
+        }
+      });
+    }
+
+    return {
+      sessions: mergeReadingSessions(localSessions, serverSessions),
+      serverEnabled: true,
+    };
+  } catch (serverError) {
+    console.error(serverError);
+    return { sessions: localSessions, serverEnabled: false };
+  }
+}
+
+function mergeReadingSessions(...sessionGroups: ReadingSession[][]) {
+  const sessionsById = new Map<string, ReadingSession>();
+  for (const sessions of sessionGroups) {
+    for (const session of sessions) {
+      sessionsById.set(session.id, session);
+    }
+  }
+
+  return Array.from(sessionsById.values()).sort(compareReadingSessions);
+}
+
+function compareReadingSessions(left: ReadingSession, right: ReadingSession) {
+  return left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id);
 }
 
 function getReadingSessionLocation(

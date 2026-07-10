@@ -15,6 +15,10 @@ const EPUB_LIBRARY_PATH = process.env.EPUB_LIBRARY_PATH
 const PROGRESS_PATH = path.resolve(
   process.env.MIGAKU_RSVP_PROGRESS_PATH ?? ".migaku-rsvp-progress.json",
 );
+const READING_SESSIONS_PATH = path.resolve(
+  process.env.MIGAKU_RSVP_READING_SESSIONS_PATH ??
+    path.join(path.dirname(PROGRESS_PATH), "reading-sessions.json"),
+);
 const DIST_DIR = path.resolve(fileURLToPath(new URL("../dist", import.meta.url)));
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const MAX_AI_PROXY_BODY_BYTES = Number(process.env.MIGAKU_RSVP_AI_BODY_BYTES ?? 512 * 1024);
@@ -55,6 +59,7 @@ createServer((request, response) => {
   if (EPUB_LIBRARY_PATH) {
     console.log(`EPUB library enabled: ${EPUB_LIBRARY_PATH}`);
     console.log(`Progress store: ${PROGRESS_PATH}`);
+    console.log(`Reading sessions store: ${READING_SESSIONS_PATH}`);
   } else {
     console.log("EPUB library disabled. Set EPUB_LIBRARY_PATH to enable server books.");
   }
@@ -129,6 +134,11 @@ async function routeApiRequest(request, response, url) {
     return;
   }
 
+  if (url.pathname === "/api/reading-sessions") {
+    await routeReadingSessionsRequest(request, response);
+    return;
+  }
+
   const fileMatch = url.pathname.match(/^\/api\/books\/([^/]+)\/file$/);
   if (request.method === "GET" && fileMatch) {
     const book = await findLibraryBook(fileMatch[1]);
@@ -154,6 +164,29 @@ async function routeApiRequest(request, response, url) {
   }
 
   sendJson(response, 404, { error: "Not found." });
+}
+
+async function routeReadingSessionsRequest(request, response) {
+  if (request.method === "GET") {
+    sendJson(response, 200, await readReadingSessionsStore());
+    return;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const body = await readJsonBody(request);
+  if (!isReadingSession(body)) {
+    sendJson(response, 400, { error: "Reading session payload is invalid." });
+    return;
+  }
+
+  const sessions = await readReadingSessionsStore();
+  const nextSessions = upsertReadingSession(sessions, body);
+  await writeReadingSessionsStore(nextSessions);
+  sendJson(response, 200, body);
 }
 
 async function routeAiProxyRequest(request, response) {
@@ -377,6 +410,38 @@ async function writeProgressStore(progressByBookId) {
   await rename(tempPath, PROGRESS_PATH);
 }
 
+async function readReadingSessionsStore() {
+  try {
+    const text = await readFile(READING_SESSIONS_PATH, "utf8");
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed)
+      ? parsed.filter(isReadingSession).sort(compareReadingSessions)
+      : [];
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function writeReadingSessionsStore(sessions) {
+  await mkdir(path.dirname(READING_SESSIONS_PATH), { recursive: true });
+  const tempPath = `${READING_SESSIONS_PATH}.${process.pid}.tmp`;
+  await writeFile(tempPath, `${JSON.stringify(sessions.sort(compareReadingSessions), null, 2)}\n`);
+  await rename(tempPath, READING_SESSIONS_PATH);
+}
+
+function upsertReadingSession(sessions, session) {
+  const sessionsById = new Map(sessions.map((candidate) => [candidate.id, candidate]));
+  sessionsById.set(session.id, session);
+  return Array.from(sessionsById.values()).sort(compareReadingSessions);
+}
+
+function compareReadingSessions(left, right) {
+  return left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id);
+}
+
 function createBookId(relativePath) {
   const normalizedPath = relativePath.split(path.sep).join("/");
   return `server-${createHash("sha256").update(normalizedPath).digest("hex").slice(0, 24)}`;
@@ -406,6 +471,46 @@ function isReaderPosition(value) {
     value.sentenceIndex >= 0 &&
     value.tokenIndex >= 0
   );
+}
+
+function isReadingSession(value) {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.bookId === "string" &&
+    value.bookId.length > 0 &&
+    isIsoDateString(value.startedAt) &&
+    isIsoDateString(value.endedAt) &&
+    Number.isFinite(value.durationMs) &&
+    value.durationMs >= 0 &&
+    Number.isSafeInteger(value.wordCount) &&
+    value.wordCount >= 0 &&
+    Number.isSafeInteger(value.characterCount) &&
+    value.characterCount >= 0 &&
+    (value.startLocation === undefined || isReadingSessionLocation(value.startLocation)) &&
+    (value.endLocation === undefined || isReadingSessionLocation(value.endLocation))
+  );
+}
+
+function isReadingSessionLocation(value) {
+  return (
+    isRecord(value) &&
+    isReaderPosition(value.position) &&
+    Number.isSafeInteger(value.progressCurrent) &&
+    value.progressCurrent >= 0 &&
+    Number.isSafeInteger(value.progressTotal) &&
+    value.progressTotal >= 0
+  );
+}
+
+function isIsoDateString(value) {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp);
 }
 
 function isRecord(value) {
