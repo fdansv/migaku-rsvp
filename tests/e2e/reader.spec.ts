@@ -423,6 +423,54 @@ test("loads server reading stats and migrates local reading sessions", async ({ 
   await expect.poll(() => migratedSessions).toContainEqual(localSession);
 });
 
+test("uses prefixed API routes when the app is mounted below a path", async ({ page }) => {
+  const session = createReadingSessionFixture({
+    id: "prefixed-session",
+    bookId: "server-book",
+    startedAtMs: Date.now() - 3 * 60_000,
+    durationMs: 3 * 60_000,
+    characterCount: 77,
+  });
+  const requestedPaths: string[] = [];
+
+  await page.route(/\/(?:rsvp\/)?api\/.*/, async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    requestedPaths.push(pathname);
+
+    if (!pathname.startsWith("/rsvp/api/")) {
+      await route.fulfill({ status: 404, json: { error: "Not found." } });
+      return;
+    }
+
+    if (pathname === "/rsvp/api/library/status") {
+      await route.fulfill({ status: 200, json: { enabled: true, bookCount: 0 } });
+      return;
+    }
+
+    if (pathname === "/rsvp/api/books") {
+      await route.fulfill({ status: 200, json: [] });
+      return;
+    }
+
+    if (pathname === "/rsvp/api/reading-sessions") {
+      await route.fulfill({ status: 200, json: [session] });
+      return;
+    }
+
+    await route.fulfill({ status: 404, json: { error: "Not found." } });
+  });
+
+  await page.goto("/rsvp/");
+  await expect(page.locator(".stats-summary span", { hasText: "Today" }).locator("strong"))
+    .toHaveText("3m");
+  await expect(page.locator(".stats-summary span", { hasText: "Chars" }).locator("strong"))
+    .toHaveText("77");
+  expect(requestedPaths).toContain("/api/library/status");
+  expect(requestedPaths).toContain("/rsvp/api/library/status");
+  expect(requestedPaths).toContain("/rsvp/api/reading-sessions");
+});
+
 test("uses Migaku token boundaries when Migaku spans multiple fallback tokens", async ({
   page,
 }, testInfo) => {

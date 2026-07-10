@@ -36,6 +36,7 @@ const AI_RECAP_MODEL =
   normalizeEnvString(process.env.MIGAKU_RSVP_AI_RECAP_MODEL) ??
   normalizeEnvString(process.env.OPENAI_MODEL) ??
   "";
+let readingSessionsWriteQueue = Promise.resolve();
 
 const MIME_TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -183,9 +184,7 @@ async function routeReadingSessionsRequest(request, response) {
     return;
   }
 
-  const sessions = await readReadingSessionsStore();
-  const nextSessions = upsertReadingSession(sessions, body);
-  await writeReadingSessionsStore(nextSessions);
+  await mutateReadingSessionsStore((sessions) => upsertReadingSession(sessions, body));
   sendJson(response, 200, body);
 }
 
@@ -405,7 +404,7 @@ async function readProgressStore() {
 
 async function writeProgressStore(progressByBookId) {
   await mkdir(path.dirname(PROGRESS_PATH), { recursive: true });
-  const tempPath = `${PROGRESS_PATH}.${process.pid}.tmp`;
+  const tempPath = createTempStorePath(PROGRESS_PATH);
   await writeFile(tempPath, `${JSON.stringify(progressByBookId, null, 2)}\n`);
   await rename(tempPath, PROGRESS_PATH);
 }
@@ -427,9 +426,20 @@ async function readReadingSessionsStore() {
 
 async function writeReadingSessionsStore(sessions) {
   await mkdir(path.dirname(READING_SESSIONS_PATH), { recursive: true });
-  const tempPath = `${READING_SESSIONS_PATH}.${process.pid}.tmp`;
+  const tempPath = createTempStorePath(READING_SESSIONS_PATH);
   await writeFile(tempPath, `${JSON.stringify(sessions.sort(compareReadingSessions), null, 2)}\n`);
   await rename(tempPath, READING_SESSIONS_PATH);
+}
+
+async function mutateReadingSessionsStore(mutator) {
+  const operation = readingSessionsWriteQueue.then(async () => {
+    const sessions = await readReadingSessionsStore();
+    const nextSessions = mutator(sessions);
+    await writeReadingSessionsStore(nextSessions);
+    return nextSessions;
+  });
+  readingSessionsWriteQueue = operation.catch(() => {});
+  return operation;
 }
 
 function upsertReadingSession(sessions, session) {
@@ -440,6 +450,10 @@ function upsertReadingSession(sessions, session) {
 
 function compareReadingSessions(left, right) {
   return left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id);
+}
+
+function createTempStorePath(storePath) {
+  return `${storePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
 }
 
 function createBookId(relativePath) {

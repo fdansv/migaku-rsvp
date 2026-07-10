@@ -19,7 +19,7 @@ export interface ServerAiStatus {
 
 export async function loadServerAiStatus() {
   try {
-    const response = await fetch(`${API_BASE}/ai/status`, {
+    const response = await fetchApi("/ai/status", {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -35,7 +35,7 @@ export async function loadServerAiStatus() {
 
 export async function isServerLibraryEnabled() {
   try {
-    const response = await fetch(`${API_BASE}/library/status`, {
+    const response = await fetchApi("/library/status", {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -51,7 +51,7 @@ export async function isServerLibraryEnabled() {
 }
 
 export async function loadServerBookEntries() {
-  const response = await fetch(`${API_BASE}/books`, {
+  const response = await fetchApi("/books", {
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
@@ -63,7 +63,7 @@ export async function loadServerBookEntries() {
 }
 
 export async function loadServerBookFile(bookId: string) {
-  const response = await fetch(`${API_BASE}/books/${encodeURIComponent(bookId)}/file`, {
+  const response = await fetchApi(`/books/${encodeURIComponent(bookId)}/file`, {
     cache: "no-store",
   });
   if (!response.ok) {
@@ -74,7 +74,7 @@ export async function loadServerBookFile(bookId: string) {
 }
 
 export async function uploadServerBook(file: File) {
-  const response = await fetch(`${API_BASE}/books`, {
+  const response = await fetchApi("/books", {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -91,7 +91,7 @@ export async function uploadServerBook(file: File) {
 }
 
 export async function loadServerBookProgress(bookId: string) {
-  const response = await fetch(`${API_BASE}/books/${encodeURIComponent(bookId)}/progress`, {
+  const response = await fetchApi(`/books/${encodeURIComponent(bookId)}/progress`, {
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
@@ -103,7 +103,7 @@ export async function loadServerBookProgress(bookId: string) {
 }
 
 export async function saveServerBookProgress(bookId: string, progress: ReaderPosition) {
-  const response = await fetch(`${API_BASE}/books/${encodeURIComponent(bookId)}/progress`, {
+  const response = await fetchApi(`/books/${encodeURIComponent(bookId)}/progress`, {
     method: "PUT",
     headers: {
       Accept: "application/json",
@@ -117,7 +117,7 @@ export async function saveServerBookProgress(bookId: string, progress: ReaderPos
 }
 
 export async function loadServerReadingSessions() {
-  const response = await fetch(`${API_BASE}/reading-sessions`, {
+  const response = await fetchApi("/reading-sessions", {
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
@@ -129,7 +129,7 @@ export async function loadServerReadingSessions() {
 }
 
 export async function saveServerReadingSession(session: ReadingSession) {
-  const response = await fetch(`${API_BASE}/reading-sessions`, {
+  const response = await fetchApi("/reading-sessions", {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -140,6 +140,33 @@ export async function saveServerReadingSession(session: ReadingSession) {
   if (!response.ok) {
     throw new Error("Could not save server reading stats.");
   }
+}
+
+async function fetchApi(path: string, init: RequestInit = {}) {
+  const apiBases = getApiBases();
+  let lastResponse: Response | null = null;
+
+  for (const apiBase of apiBases) {
+    const response = await fetch(`${apiBase}${path}`, init);
+    if (response.ok || response.status !== 404) {
+      return response;
+    }
+    lastResponse = response;
+  }
+
+  return lastResponse ?? fetch(`${API_BASE}${path}`, init);
+}
+
+function getApiBases() {
+  const bases = [API_BASE];
+  if (typeof window !== "undefined") {
+    const mountMatch = window.location.pathname.match(/^\/([^/]+)\//);
+    if (mountMatch?.[1]) {
+      bases.push(`/${mountMatch[1]}${API_BASE}`);
+    }
+  }
+
+  return Array.from(new Set(bases));
 }
 
 async function getResponseError(response: Response, fallback: string) {

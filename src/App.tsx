@@ -812,14 +812,7 @@ async function loadReadingSessionStore() {
     const localOnlySessions = localSessions.filter((session) => !serverSessionIds.has(session.id));
 
     if (localOnlySessions.length > 0) {
-      void Promise.allSettled(
-        localOnlySessions.map((session) => saveServerReadingSession(session)),
-      ).then((results) => {
-        const failed = results.filter((result) => result.status === "rejected");
-        if (failed.length > 0) {
-          console.error(`Could not migrate ${failed.length} local reading session(s) to server.`);
-        }
-      });
+      void migrateLocalReadingSessions(localOnlySessions);
     }
 
     return {
@@ -829,6 +822,22 @@ async function loadReadingSessionStore() {
   } catch (serverError) {
     console.error(serverError);
     return { sessions: localSessions, serverEnabled: false };
+  }
+}
+
+async function migrateLocalReadingSessions(sessions: ReadingSession[]) {
+  let failedCount = 0;
+  for (const session of sessions) {
+    try {
+      await saveServerReadingSession(session);
+    } catch (error) {
+      failedCount += 1;
+      console.error(error);
+    }
+  }
+
+  if (failedCount > 0) {
+    console.error(`Could not migrate ${failedCount} local reading session(s) to server.`);
   }
 }
 
