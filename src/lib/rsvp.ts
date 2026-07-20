@@ -33,6 +33,16 @@ export interface DisplayRenderSegment {
 
 type StepConfigInput = number | Partial<ReaderStepConfig> | undefined;
 type PositionInput = number | Pick<ReaderPosition, "tokenIndex" | "characterOffset">;
+type StepStart = Pick<ReaderPosition, "tokenIndex" | "characterOffset">;
+
+interface ProgressCounts {
+  counts: number[];
+  prefixTotals: number[];
+  sentenceIndexById: Map<string, number>;
+  total: number;
+}
+
+const progressCountsCache = new WeakMap<Sentence[], Map<string, ProgressCounts>>();
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
   stepsPerMinute: 150,
@@ -168,33 +178,22 @@ export function getProgressStats(
   tokenGroupsBySentenceId: TokenGroupsBySentenceId = {},
 ) {
   const config = normalizeStepConfig(stepConfig);
-  const total = sentences.reduce(
-    (sum, sentence) =>
-      sum +
-      getProgressUnitCount(
-        sentence,
-        config,
-        getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId),
-      ),
-    0,
+  const cachedCounts = getProgressCounts(sentences, config);
+  const groupedDeltas = getGroupedProgressDeltas(
+    sentences,
+    config,
+    cachedCounts,
+    tokenGroupsBySentenceId,
   );
+  const total = cachedCounts.total + groupedDeltas.totalDelta;
   if (total === 0) {
     return { current: 0, total: 0, percent: 0 };
   }
 
   const current = clampPosition(position, sentences);
-  const completedBeforeCurrentSentence = sentences
-    .slice(0, current.sentenceIndex)
-    .reduce(
-      (sum, sentence) =>
-        sum +
-        getProgressUnitCount(
-          sentence,
-          config,
-          getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId),
-        ),
-      0,
-    );
+  const completedBeforeCurrentSentence =
+    (cachedCounts.prefixTotals[current.sentenceIndex] ?? 0) +
+    groupedDeltas.deltasBeforeSentence(current.sentenceIndex);
   const sentence = sentences[current.sentenceIndex];
   const tokenGroups = getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId);
   const display = getDisplayStep(sentence, current, config, tokenGroups);
@@ -502,7 +501,7 @@ function getStepStarts(
   sentence: Sentence,
   config: ReaderStepConfig,
   tokenGroups: TokenGroups = [],
-): Array<Pick<ReaderPosition, "tokenIndex" | "characterOffset">> {
+): StepStart[] {
   if (config.mode === "characters") {
     return getCharacterStepStarts(sentence, config.characterCount);
   }
@@ -524,36 +523,98 @@ function moveByStep(
   }
 
   const config = normalizeStepConfig(stepConfig);
-  const steps = getBookStepPositions(sentences, config, tokenGroupsBySentenceId);
-  if (steps.length === 0) {
-    return clampPosition(position, sentences);
+  const current = getCurrentStepPosition(position, sentences, config, tokenGroupsBySentenceId);
+  const currentSentence = sentences[current.sentenceIndex];
+  const currentStepStarts = getStepStarts(
+    currentSentence,
+    config,
+    getTokenGroupsForSentence(currentSentence, tokenGroupsBySentenceId),
+  );
+
+  if (currentStepStarts.length === 0) {
+    return (
+      getBoundaryStepPosition(
+        sentences,
+        current.sentenceIndex + offset,
+        offset,
+        config,
+        tokenGroupsBySentenceId,
+      ) ?? current
+    );
   }
 
-  const current = getCurrentStepPosition(position, sentences, config, tokenGroupsBySentenceId);
-  const currentStepIndex = steps.findIndex(
-    (step) => getStepPositionKey(step, config) === getStepPositionKey(current, config),
-  );
-  const safeStepIndex =
-    currentStepIndex >= 0 ? currentStepIndex : findNearestStepIndex(steps, current, sentences, config);
-  const nextStepIndex = Math.min(Math.max(safeStepIndex + offset, 0), steps.length - 1);
+  const currentStepIndex = getStepStartIndex(currentStepStarts, current, currentSentence, config);
+  const nextStep = currentStepStarts[currentStepIndex + offset];
+  if (nextStep) {
+    return createStepPosition(current.sentenceIndex, nextStep);
+  }
 
-  return steps[nextStepIndex] ?? current;
+  return (
+    getBoundaryStepPosition(
+      sentences,
+      current.sentenceIndex + offset,
+      offset,
+      config,
+      tokenGroupsBySentenceId,
+    ) ?? current
+  );
 }
 
-function getBookStepPositions(
+function getStepStartIndex(
+  starts: StepStart[],
+  position: PositionInput,
+  sentence: Sentence,
+  config: ReaderStepConfig,
+) {
+  const positionOffset = getStepComparableOffset(position, sentence, config);
+  let currentIndex = 0;
+
+  for (let index = 0; index < starts.length; index += 1) {
+    if (getStepComparableOffset(starts[index], sentence, config) > positionOffset) {
+      break;
+    }
+    currentIndex = index;
+  }
+
+  return currentIndex;
+}
+
+function getBoundaryStepPosition(
   sentences: Sentence[],
+  sentenceIndex: number,
+  direction: -1 | 1,
   config: ReaderStepConfig,
   tokenGroupsBySentenceId: TokenGroupsBySentenceId,
 ) {
-  return sentences.flatMap((sentence, sentenceIndex) =>
-    getStepStarts(
+  for (
+    let index = sentenceIndex;
+    index >= 0 && index < sentences.length;
+    index += direction
+  ) {
+    const sentence = sentences[index];
+    const starts = getStepStarts(
       sentence,
       config,
       getTokenGroupsForSentence(sentence, tokenGroupsBySentenceId),
-    ).map(
-      (start) => ({ sentenceIndex, ...start }),
-    ),
-  );
+    );
+    const start = direction > 0 ? starts[0] : starts.at(-1);
+    if (start) {
+      return createStepPosition(index, start);
+    }
+  }
+
+  return undefined;
+}
+
+function createStepPosition(sentenceIndex: number, start: StepStart): ReaderPosition {
+  const position: ReaderPosition = {
+    sentenceIndex,
+    tokenIndex: start.tokenIndex,
+  };
+  if (typeof start.characterOffset === "number") {
+    position.characterOffset = start.characterOffset;
+  }
+  return position;
 }
 
 function getCurrentStepPosition(
@@ -611,33 +672,6 @@ function getWordStepStartForTokenIndex(
   }
 
   return stepStart;
-}
-
-function findNearestStepIndex(
-  steps: ReaderPosition[],
-  position: ReaderPosition,
-  sentences: Sentence[],
-  config: ReaderStepConfig,
-) {
-  const nextStepIndex = steps.findIndex(
-    (step) => {
-      if (step.sentenceIndex > position.sentenceIndex) {
-        return true;
-      }
-      if (step.sentenceIndex !== position.sentenceIndex) {
-        return false;
-      }
-
-      const sentence = sentences[position.sentenceIndex];
-      return getStepComparableOffset(step, sentence, config) >= getStepComparableOffset(position, sentence, config);
-    },
-  );
-
-  if (nextStepIndex < 0) {
-    return steps.length - 1;
-  }
-
-  return nextStepIndex;
 }
 
 function getFirstStepStart(sentence: Sentence, tokenGroups: TokenGroups = []) {
@@ -739,6 +773,85 @@ function getUnknownWordUnitKeys(
   }
 
   return keys;
+}
+
+function getProgressCounts(sentences: Sentence[], config: ReaderStepConfig): ProgressCounts {
+  const key = getProgressCountsKey(config);
+  let countsByConfig = progressCountsCache.get(sentences);
+  if (!countsByConfig) {
+    countsByConfig = new Map();
+    progressCountsCache.set(sentences, countsByConfig);
+  }
+
+  const cachedCounts = countsByConfig.get(key);
+  if (cachedCounts) {
+    return cachedCounts;
+  }
+
+  const counts: number[] = [];
+  const prefixTotals: number[] = [];
+  const sentenceIndexById = new Map<string, number>();
+  let total = 0;
+
+  sentences.forEach((sentence, index) => {
+    sentenceIndexById.set(sentence.id, index);
+    prefixTotals.push(total);
+    const count = getProgressUnitCount(sentence, config);
+    counts.push(count);
+    total += count;
+  });
+
+  const progressCounts = { counts, prefixTotals, sentenceIndexById, total };
+  countsByConfig.set(key, progressCounts);
+  return progressCounts;
+}
+
+function getGroupedProgressDeltas(
+  sentences: Sentence[],
+  config: ReaderStepConfig,
+  baseCounts: ProgressCounts,
+  tokenGroupsBySentenceId: TokenGroupsBySentenceId,
+) {
+  const deltaBySentenceIndex = new Map<number, number>();
+  let totalDelta = 0;
+
+  for (const [sentenceId, tokenGroups] of Object.entries(tokenGroupsBySentenceId)) {
+    if (!tokenGroups || tokenGroups.length === 0) {
+      continue;
+    }
+
+    const sentenceIndex = baseCounts.sentenceIndexById.get(sentenceId);
+    if (sentenceIndex === undefined) {
+      continue;
+    }
+
+    const sentence = sentences[sentenceIndex];
+    const groupedCount = getProgressUnitCount(sentence, config, tokenGroups);
+    const delta = groupedCount - (baseCounts.counts[sentenceIndex] ?? 0);
+    if (delta === 0) {
+      continue;
+    }
+
+    deltaBySentenceIndex.set(sentenceIndex, delta);
+    totalDelta += delta;
+  }
+
+  return {
+    totalDelta,
+    deltasBeforeSentence(sentenceIndex: number) {
+      let delta = 0;
+      deltaBySentenceIndex.forEach((value, index) => {
+        if (index < sentenceIndex) {
+          delta += value;
+        }
+      });
+      return delta;
+    },
+  };
+}
+
+function getProgressCountsKey(config: ReaderStepConfig) {
+  return `${config.mode}:${config.wordCount}:${config.characterCount}`;
 }
 
 function getTokenGroupsForSentence(
@@ -957,22 +1070,15 @@ function getTokensInRange(sentence: Sentence, startOffset: number, endOffset: nu
   return token ? [token] : [];
 }
 
-function getStepPositionKey(position: ReaderPosition, config: ReaderStepConfig) {
-  if (config.mode === "characters") {
-    return `${position.sentenceIndex}:${position.characterOffset ?? position.tokenIndex}`;
-  }
-  return `${position.sentenceIndex}:${position.tokenIndex}`;
-}
-
 function getStepComparableOffset(
-  position: ReaderPosition,
+  position: PositionInput,
   sentence: Sentence,
   config: ReaderStepConfig,
 ) {
   if (config.mode === "characters") {
     return getPositionCharacterOffset(sentence, position);
   }
-  return position.tokenIndex;
+  return getPositionTokenIndex(position);
 }
 
 function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {

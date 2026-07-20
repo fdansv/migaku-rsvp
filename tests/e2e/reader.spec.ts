@@ -222,6 +222,157 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).not.toHaveClass(/unknown/);
 });
 
+test("answers follow-up questions from the recap panel", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "recap-follow-up.epub");
+  await createSmallEpub(epubPath);
+  const aiRequests: unknown[] = [];
+  let releaseFollowUpResponse: (() => void) | undefined;
+  const followUpResponseReady = new Promise<void>((resolve) => {
+    releaseFollowUpResponse = resolve;
+  });
+
+  await page.route("**/api/ai/chat", async (route) => {
+    const requestIndex = aiRequests.length;
+    const payload = route.request().postDataJSON();
+    aiRequests.push(payload);
+    if (requestIndex === 1) {
+      await followUpResponseReady;
+    }
+
+    await route.fulfill({
+      status: 200,
+      json: {
+        choices: [
+          {
+            message: {
+              content:
+                requestIndex === 0
+                  ? "The cat ran before the dog joined."
+                  : "The cat ran.",
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem(
+      "migaku-rsvp:settings",
+      JSON.stringify({ recapApiUrl: "/api/ai/chat", recapModel: "test-model" }),
+    );
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expectVisibleSentenceText(page, "犬も走る。");
+
+  await page.getByRole("button", { name: "Recap" }).click();
+  const recapPanel = page.locator(".recap-panel");
+  await expect(recapPanel).toContainText("The cat ran before the dog joined.");
+  await expect(page.getByRole("textbox", { name: "Follow-up question" })).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Follow-up question" }).fill("Who ran?");
+  await page.getByRole("button", { name: "Send follow-up" }).click();
+
+  await expect(recapPanel).toContainText("Who ran?");
+  await expect(recapPanel).toContainText("Answering...");
+  await page.locator(".recap-followup-answer").evaluate((answer) => {
+    answer.innerHTML = `
+      <span class="migaku-sentence-group migaku-sentence -mgk-processed">Answer</span>
+      <div class="migaku-sentence -mgk-injected">Answering...</div>
+    `;
+  });
+  releaseFollowUpResponse?.();
+  await expect(recapPanel).toContainText("The cat ran.");
+  await expect(recapPanel).not.toContainText("Answering...");
+  const recapCopyStyles = await recapPanel.evaluate((panel) => {
+    const extensionStyle = document.createElement("style");
+    extensionStyle.textContent = `
+      .migaku-token {
+        display: inline-flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        margin: 5px 0 !important;
+        position: relative !important;
+        vertical-align: text-bottom !important;
+        white-space: nowrap !important;
+      }
+
+      .migaku-fragment {
+        display: flex !important;
+        flex-direction: column-reverse !important;
+        align-items: center !important;
+      }
+
+      .migaku-fragment .migaku-surface {
+        display: block !important;
+        width: 100% !important;
+        padding: 1px 0 !important;
+        text-align: center !important;
+        white-space: nowrap !important;
+      }
+    `;
+    document.head.append(extensionStyle);
+
+    const answerCopy = panel.querySelector<HTMLElement>(".recap-followup-answer .recap-copy");
+    if (!answerCopy) {
+      throw new Error("Missing answer copy");
+    }
+    answerCopy.innerHTML = `
+      <span class="migaku-token">
+        <span class="migaku-fragment -mgk-content">
+          <span class="migaku-surface">The cat</span>
+          <span class="migaku-spacer" aria-hidden="true">\u200b</span>
+        </span>
+      </span>
+      <span class="migaku-token">
+        <span class="migaku-fragment -mgk-content">
+          <span class="migaku-surface">ran.</span>
+          <span class="migaku-spacer" aria-hidden="true">\u200b</span>
+        </span>
+      </span>
+    `;
+
+    const token = answerCopy.querySelector<HTMLElement>(".migaku-token");
+    const fragment = answerCopy.querySelector<HTMLElement>(".migaku-fragment");
+    const surface = answerCopy.querySelector<HTMLElement>(".migaku-surface");
+    if (!token || !fragment || !surface) {
+      throw new Error("Missing Migaku fixture nodes");
+    }
+
+    const tokenStyle = getComputedStyle(token);
+    const fragmentStyle = getComputedStyle(fragment);
+    const surfaceStyle = getComputedStyle(surface);
+    return {
+      fragmentDisplay: fragmentStyle.display,
+      surfaceDisplay: surfaceStyle.display,
+      surfaceTextAlign: surfaceStyle.textAlign,
+      tokenDisplay: tokenStyle.display,
+      tokenMarginTop: tokenStyle.marginTop,
+    };
+  });
+  expect(recapCopyStyles).toEqual({
+    fragmentDisplay: "inline",
+    surfaceDisplay: "inline",
+    surfaceTextAlign: "start",
+    tokenDisplay: "inline",
+    tokenMarginTop: "0px",
+  });
+  expect(aiRequests).toHaveLength(2);
+  expect(JSON.stringify(aiRequests[1])).toContain("The cat ran before the dog joined.");
+  expect(JSON.stringify(aiRequests[1])).toContain("Who ran?");
+});
+
 test("restores the selected server-library book after refresh", async ({ page }, testInfo) => {
   const firstEpubPath = path.join(testInfo.outputDir, "server-first.epub");
   const secondEpubPath = path.join(testInfo.outputDir, "server-second.epub");
@@ -1051,7 +1202,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "が");
   await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expectActiveTokenHitTarget(page);
-  await expect.poll(() => parseEventCount(page)).toBeGreaterThan(initialParseEvents);
+  await expect.poll(() => parseEventCount(page)).toBe(initialParseEvents);
 
   const afterNextParseEvents = await parseEventCount(page);
   await activeRsvpToken(page).click();
@@ -1062,7 +1213,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await expect(activeRsvpToken(page)).toHaveAttribute("data-mgk-term", "猫");
   await expect(activeRsvpToken(page)).toHaveClass(/\bmigaku-token\b/);
   await expectActiveTokenHitTarget(page);
-  await expect.poll(() => parseEventCount(page)).toBeGreaterThan(afterNextParseEvents);
+  await expect.poll(() => parseEventCount(page)).toBe(afterNextParseEvents);
 
   await page.getByRole("button", { name: "Play" }).click();
   await expectRsvpDisplayText(page, "走る。");

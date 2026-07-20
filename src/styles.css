@@ -711,7 +711,8 @@ button {
 .icon-button,
 .play-button,
 .import-button,
-.recap-button {
+.recap-button,
+.recap-followup-send {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -733,6 +734,7 @@ button {
   padding: 0 14px;
 }
 
+.recap-followup-send,
 .recap-button {
   min-height: 32px;
   padding: 0 10px;
@@ -752,11 +754,13 @@ button {
 .icon-button:hover,
 .play-button:hover,
 .import-button:hover,
-.recap-button:hover {
+.recap-button:hover,
+.recap-followup-send:hover {
   border-color: var(--accent);
 }
 
-.recap-button:disabled {
+.recap-button:disabled,
+.recap-followup-send:disabled {
   cursor: wait;
   opacity: 0.68;
 }
@@ -802,13 +806,13 @@ progress::-webkit-progress-value {
 
 .recap-panel {
   display: grid;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 12px 14px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 94%, var(--bg));
   color: var(--text);
-  box-shadow: 0 10px 28px color-mix(in srgb, #000000 8%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, #000000 6%, transparent);
 }
 
 .recap-panel--error {
@@ -846,12 +850,150 @@ progress::-webkit-progress-value {
   flex: 0 0 auto;
 }
 
-.recap-text {
+.recap-copy {
+  min-width: 0;
   margin: 0;
   color: var(--text);
-  font-size: 0.94rem;
-  line-height: 1.55;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  overflow-wrap: break-word;
   white-space: pre-wrap;
+}
+
+.recap-panel--loading .recap-copy {
+  color: var(--muted);
+}
+
+.recap-panel--error .recap-copy,
+.recap-followup-answer--error .recap-copy {
+  color: var(--danger);
+}
+
+.app .recap-panel .recap-copy.migaku-sentence-group,
+.app .recap-panel .recap-copy.migaku-sentence {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+  font: inherit !important;
+  line-height: 1.5 !important;
+  text-align: start !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+}
+
+.app .recap-panel .recap-copy :is(
+    .migaku-sentence-group,
+    .migaku-sentence,
+    .migaku-token,
+    .migaku-word-cont,
+    .migaku-ruby,
+    .migaku-fragment,
+    .migaku-surface,
+    .-mgk-content
+  ) {
+  display: inline !important;
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  float: none !important;
+  font: inherit !important;
+  line-height: inherit !important;
+  text-align: inherit !important;
+  text-decoration: none !important;
+  text-indent: 0 !important;
+  text-transform: none !important;
+  transform: none !important;
+  vertical-align: baseline !important;
+  white-space: inherit !important;
+}
+
+.app .recap-panel .recap-copy :is(rt, rp, .migaku-reading, .migaku-spacer) {
+  display: none !important;
+}
+
+.recap-followups {
+  display: grid;
+  gap: 11px;
+  padding-top: 1px;
+}
+
+.recap-followup {
+  display: grid;
+  gap: 8px;
+  padding-top: 11px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.recap-followup-question,
+.recap-followup-answer {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.recap-followup-question .recap-copy {
+  font-weight: 650;
+}
+
+.recap-followup-answer .recap-copy {
+  color: color-mix(in srgb, var(--text) 84%, var(--muted));
+}
+
+.recap-followup-label {
+  display: inline-flex;
+  width: max-content;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.recap-followup-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.recap-followup-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.recap-followup-input:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  outline-offset: 1px;
+}
+
+.recap-followup-input:disabled {
+  opacity: 0.72;
+}
+
+.recap-followup-send {
+  min-width: 82px;
+  background: var(--panel);
 }
 
 .settings {

@@ -4,13 +4,20 @@ export const RECAP_PAGE_LIMIT = 3;
 
 const MAX_RECAP_CONTEXT_CHARS = 8_000;
 const MAX_RECAP_TOKENS = 320;
+const MAX_RECAP_FOLLOW_UP_TOKENS = 260;
 const MAX_TRANSLATION_TOKENS = 160;
 const REASONING_FALLBACK_TOKENS = 2_000;
+const AI_REQUEST_TIMEOUT_MS = 90_000;
 
 export interface RecapPage {
   index: number;
   title: string;
   text: string;
+}
+
+export interface RecapFollowUpHistoryEntry {
+  question: string;
+  answer: string;
 }
 
 export function getRecapPages(
@@ -95,6 +102,61 @@ export async function generateAiRecap({
   });
 }
 
+export async function generateAiRecapFollowUp({
+  settings,
+  bookTitle,
+  pages,
+  summary,
+  history,
+  question,
+}: {
+  settings: Pick<ReaderSettings, "recapApiKey" | "recapApiUrl" | "recapModel">;
+  bookTitle: string;
+  pages: RecapPage[];
+  summary: string;
+  history: RecapFollowUpHistoryEntry[];
+  question: string;
+}) {
+  const trimmedSummary = summary.trim();
+  const trimmedQuestion = question.trim();
+
+  if (!trimmedSummary) {
+    throw new Error("Generate a recap before asking a follow-up.");
+  }
+
+  if (!trimmedQuestion) {
+    throw new Error("Enter a follow-up question.");
+  }
+
+  if (pages.length === 0) {
+    throw new Error("No recap context is available for follow-up questions.");
+  }
+
+  return generateAiText({
+    settings,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You answer follow-up questions about a reading recap. Use only the supplied excerpt, recap, and prior Q&A; do not continue the story or invent details.",
+      },
+      {
+        role: "user",
+        content: buildRecapFollowUpPrompt({
+          bookTitle,
+          pages,
+          summary: trimmedSummary,
+          history,
+          question: trimmedQuestion,
+        }),
+      },
+    ],
+    maxTokens: MAX_RECAP_FOLLOW_UP_TOKENS,
+    reasoningEffort: "none",
+    emptyResponseError: "The AI response did not include a readable answer.",
+  });
+}
+
 export async function generateAiSentenceTranslation({
   settings,
   sentenceText,
@@ -162,14 +224,28 @@ async function generateAiText({
   }
 
   async function post(payloadToSend: Record<string, unknown>) {
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payloadToSend),
-    });
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), AI_REQUEST_TIMEOUT_MS);
+    let response: Response;
+
+    try {
+      response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payloadToSend),
+        signal: abortController.signal,
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw new Error("AI request timed out. Try again with a shorter question or recap.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const bodyText = await response.text();
     const parsedBody = parseJson(bodyText);
@@ -265,6 +341,10 @@ async function generateAiText({
       const status = (error as Error & { status?: number }).status;
 
       if (status !== 400) {
+        if (parsedMessage.startsWith("AI request timed out.")) {
+          throw error instanceof Error ? error : new Error(parsedMessage);
+        }
+
         if (parsedMessage.includes("AI request failed (")) {
           throw error instanceof Error
             ? error
@@ -321,20 +401,50 @@ async function generateAiText({
 }
 
 export function buildRecapPrompt(bookTitle: string, pages: RecapPage[]) {
-  const excerpts = pages
+  return [
+    `Book: ${bookTitle}`,
+    "Previous reading context:",
+    formatRecapPages(pages),
+    "Write a concise recap in English, using no more than three short paragraphs and no bullet points.",
+    "Aim for 120 words or fewer. Keep names and important source-language terms as written.",
+  ].join("\n\n");
+}
+
+export function buildRecapFollowUpPrompt({
+  bookTitle,
+  pages,
+  summary,
+  history,
+  question,
+}: {
+  bookTitle: string;
+  pages: RecapPage[];
+  summary: string;
+  history: RecapFollowUpHistoryEntry[];
+  question: string;
+}) {
+  const historyText = history
     .map(
-      (page, pageIndex) =>
-        `Page ${pageIndex + 1}: ${page.title || `Section ${page.index + 1}`}\n${page.text}`,
+      (entry, index) =>
+        `Q${index + 1}: ${entry.question.trim()}\nA${index + 1}: ${entry.answer.trim()}`,
     )
+    .filter((entry) => entry.trim())
     .join("\n\n");
 
   return [
     `Book: ${bookTitle}`,
     "Previous reading context:",
-    excerpts,
-    "Write a concise recap in English, using no more than three short paragraphs and no bullet points.",
-    "Aim for 120 words or fewer. Keep names and important source-language terms as written.",
-  ].join("\n\n");
+    formatRecapPages(pages),
+    "Current recap:",
+    summary.trim(),
+    historyText ? "Prior follow-up Q&A:" : "",
+    historyText,
+    "Question:",
+    question.trim(),
+    "Answer in English in about one short paragraph, using only the supplied previous reading context, recap, and prior Q&A. If the supplied context does not answer the question, say that it is not in the recap context.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function buildSentenceTranslationPrompt(sentenceText: string) {
@@ -358,6 +468,15 @@ export function extractSummaryFromResponse(bodyText: string) {
   } catch {
     return trimmed;
   }
+}
+
+function formatRecapPages(pages: RecapPage[]) {
+  return pages
+    .map(
+      (page, pageIndex) =>
+        `Page ${pageIndex + 1}: ${page.title || `Section ${page.index + 1}`}\n${page.text}`,
+    )
+    .join("\n\n");
 }
 
 function trimRecapPages(pages: RecapPage[], maxChars: number) {
@@ -484,6 +603,10 @@ function textFromValue(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isAbortError(error: unknown) {
+  return isRecord(error) && error.name === "AbortError";
 }
 
 function isServerAiProxyUrl(apiUrl: string) {

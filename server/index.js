@@ -21,8 +21,18 @@ const READING_SESSIONS_PATH = path.resolve(
 );
 const DIST_DIR = path.resolve(fileURLToPath(new URL("../dist", import.meta.url)));
 const MAX_JSON_BODY_BYTES = 16 * 1024;
-const MAX_AI_PROXY_BODY_BYTES = Number(process.env.MIGAKU_RSVP_AI_BODY_BYTES ?? 512 * 1024);
-const MAX_EPUB_UPLOAD_BYTES = Number(process.env.MAX_EPUB_UPLOAD_BYTES ?? 500 * 1024 * 1024);
+const MAX_AI_PROXY_BODY_BYTES = normalizePositiveInteger(
+  process.env.MIGAKU_RSVP_AI_BODY_BYTES,
+  512 * 1024,
+);
+const AI_PROXY_TIMEOUT_MS = normalizePositiveInteger(
+  process.env.MIGAKU_RSVP_AI_TIMEOUT_MS,
+  90_000,
+);
+const MAX_EPUB_UPLOAD_BYTES = normalizePositiveInteger(
+  process.env.MAX_EPUB_UPLOAD_BYTES,
+  500 * 1024 * 1024,
+);
 const DEFAULT_AI_API_URL = "https://api.openai.com/v1/chat/completions";
 const AI_API_URL =
   normalizeEnvString(process.env.MIGAKU_RSVP_AI_API_URL) ??
@@ -216,6 +226,8 @@ async function routeAiProxyRequest(request, response) {
   const upstreamPayload = buildAiProxyPayload(payload);
 
   let upstreamResponse;
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), AI_PROXY_TIMEOUT_MS);
   try {
     upstreamResponse = await fetch(AI_API_URL, {
       method: "POST",
@@ -224,10 +236,17 @@ async function routeAiProxyRequest(request, response) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(upstreamPayload),
+      signal: abortController.signal,
     });
-  } catch {
-    sendJson(response, 502, { error: "AI upstream request failed." });
+  } catch (error) {
+    if (isAbortError(error)) {
+      sendJson(response, 504, { error: "AI upstream request timed out." });
+    } else {
+      sendJson(response, 502, { error: "AI upstream request failed." });
+    }
     return;
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const body = await upstreamResponse.text();
@@ -536,6 +555,10 @@ function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isAbortError(error) {
+  return isRecord(error) && error.name === "AbortError";
+}
+
 function sendJson(response, statusCode, payload) {
   const body = `${JSON.stringify(payload)}\n`;
   response.writeHead(statusCode, {
@@ -611,6 +634,15 @@ function readJsonBody(request, maxBytes = MAX_JSON_BODY_BYTES) {
 
 function normalizeEnvString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.round(parsed);
 }
 
 function normalizeAiTokenParameter(value) {

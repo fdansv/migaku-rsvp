@@ -3,10 +3,12 @@ import type { Book, Chapter, ReaderSettings, Sentence } from "../types";
 import { createSentence } from "./text";
 import { DEFAULT_SETTINGS } from "./rsvp";
 import {
+  buildRecapFollowUpPrompt,
   buildSentenceTranslationPrompt,
   buildRecapPrompt,
   extractSummaryFromResponse,
   generateAiRecap,
+  generateAiRecapFollowUp,
   generateAiSentenceTranslation,
   getRecapPages,
 } from "./recap";
@@ -72,6 +74,25 @@ describe("recap helpers", () => {
     expect(prompt).toContain("猫が走る。");
     expect(prompt).toContain("no more than three short paragraphs");
     expect(prompt).toContain("120 words or fewer");
+    expect(prompt).not.toContain("Authorization");
+  });
+
+  it("builds a recap follow-up prompt from the recap context and prior Q&A", () => {
+    const prompt = buildRecapFollowUpPrompt({
+      bookTitle: "本",
+      pages: [{ index: 0, title: "第一章", text: "猫が走る。" }],
+      summary: "A cat runs through the room.",
+      history: [{ question: "Where is the cat?", answer: "The excerpt does not say." }],
+      question: "Who runs?",
+    });
+
+    expect(prompt).toContain("Book: 本");
+    expect(prompt).toContain("猫が走る。");
+    expect(prompt).toContain("A cat runs through the room.");
+    expect(prompt).toContain("Q1: Where is the cat?");
+    expect(prompt).toContain("Question:");
+    expect(prompt).toContain("Who runs?");
+    expect(prompt).toContain("about one short paragraph");
     expect(prompt).not.toContain("Authorization");
   });
 
@@ -252,6 +273,67 @@ describe("recap helpers", () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({
       max_completion_tokens: 320,
     });
+  });
+
+  it("posts a recap follow-up request with the recap and prior answers", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: "The cat runs." } }] }), {
+        status: 200,
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      generateAiRecapFollowUp({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          recapApiUrl: "/api/ai/chat",
+          recapApiKey: "",
+          recapModel: "local-summary-model",
+        },
+        bookTitle: "本",
+        pages: [{ index: 0, title: "第一章", text: "猫が走る。" }],
+        summary: "A cat runs through the room.",
+        history: [{ question: "Where is it?", answer: "The excerpt does not say." }],
+        question: "Who runs?",
+      }),
+    ).resolves.toBe("The cat runs.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    const payload = JSON.parse(String(init?.body));
+    expect(payload).toMatchObject({
+      model: "local-summary-model",
+      max_completion_tokens: 260,
+      reasoning_effort: "none",
+    });
+    expect(payload.messages[1].content).toContain("A cat runs through the room.");
+    expect(payload.messages[1].content).toContain("Q1: Where is it?");
+    expect(payload.messages[1].content).toContain("Who runs?");
+  });
+
+  it("surfaces AI request timeouts", async () => {
+    const abortError = new Error("The operation was aborted.");
+    abortError.name = "AbortError";
+    globalThis.fetch = vi.fn(async () => {
+      throw abortError;
+    });
+
+    await expect(
+      generateAiRecapFollowUp({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          recapApiUrl: "/api/ai/chat",
+          recapApiKey: "",
+          recapModel: "local-summary-model",
+        },
+        bookTitle: "本",
+        pages: [{ index: 0, title: "第一章", text: "猫が走る。" }],
+        summary: "A cat runs through the room.",
+        history: [],
+        question: "Who runs?",
+      }),
+    ).rejects.toThrow("AI request timed out.");
   });
 
   it("switches to max_tokens when the model rejects max_completion_tokens", async () => {

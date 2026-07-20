@@ -31,7 +31,14 @@ import {
   type ReaderStepConfig,
   type TokenGroupsBySentenceId,
 } from "./lib/rsvp";
-import { generateAiRecap, generateAiSentenceTranslation, getRecapPages } from "./lib/recap";
+import {
+  generateAiRecap,
+  generateAiRecapFollowUp,
+  generateAiSentenceTranslation,
+  getRecapPages,
+  type RecapFollowUpHistoryEntry,
+  type RecapPage,
+} from "./lib/recap";
 import { loadSettings, saveSettings } from "./lib/settings";
 import {
   isServerLibraryEnabled,
@@ -63,7 +70,26 @@ const TRANSPORT_KEY_CODES = new Set([
 ]);
 
 type RecapStatus = "idle" | "loading" | "success" | "error";
+type RecapFollowUpStatus = "loading" | "success" | "error";
 type SentenceTranslationStatus = "loading" | "success" | "error";
+
+interface RecapFollowUp {
+  id: string;
+  status: RecapFollowUpStatus;
+  question: string;
+  answer: string;
+  error: string;
+}
+
+interface RecapState {
+  status: RecapStatus;
+  summary: string;
+  error: string;
+  sourceLabel: string;
+  bookTitle: string;
+  pages: RecapPage[];
+  followUps: RecapFollowUp[];
+}
 
 interface SentenceTranslation {
   status: SentenceTranslationStatus;
@@ -105,17 +131,7 @@ export function App() {
   const [autoPaused, setAutoPaused] = useState(false);
   const [skipStopKey, setSkipStopKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [recap, setRecap] = useState<{
-    status: RecapStatus;
-    summary: string;
-    error: string;
-    sourceLabel: string;
-  }>({
-    status: "idle",
-    summary: "",
-    error: "",
-    sourceLabel: "",
-  });
+  const [recap, setRecap] = useState<RecapState>(() => createEmptyRecapState());
   const [sentenceTranslations, setSentenceTranslations] = useState<
     Record<string, SentenceTranslation>
   >({});
@@ -313,7 +329,7 @@ export function App() {
   }, [sentences, stepConfig, tokenGroupsBySentenceId]);
 
   useEffect(() => {
-    setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" });
+    setRecap(createEmptyRecapState());
     setSentenceTranslations({});
     translationRequestsRef.current.clear();
   }, [selectedBookId]);
@@ -592,25 +608,138 @@ export function App() {
     stopPlayback();
 
     const pages = getRecapPages(selectedBook, currentSentence);
+    const bookTitle = selectedBook?.title ?? "Untitled book";
     const sourceLabel =
       pages.length === 1 ? "1 previous page" : pages.length > 1 ? `${pages.length} previous pages` : "";
 
-    setRecap({ status: "loading", summary: "", error: "", sourceLabel });
+    setRecap({
+      status: "loading",
+      summary: "",
+      error: "",
+      sourceLabel,
+      bookTitle,
+      pages,
+      followUps: [],
+    });
 
     try {
       const summary = await generateAiRecap({
         settings,
-        bookTitle: selectedBook?.title ?? "Untitled book",
+        bookTitle,
         pages,
       });
-      setRecap({ status: "success", summary, error: "", sourceLabel });
+      setRecap({
+        status: "success",
+        summary,
+        error: "",
+        sourceLabel,
+        bookTitle,
+        pages,
+        followUps: [],
+      });
     } catch (error) {
       setRecap({
         status: "error",
         summary: "",
         error: error instanceof Error ? error.message : "Could not generate recap.",
         sourceLabel,
+        bookTitle,
+        pages,
+        followUps: [],
       });
+    }
+  }
+
+  async function handleRecapFollowUp(question: string) {
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion) {
+      return;
+    }
+
+    setAutoPaused(false);
+    stopPlayback();
+
+    const followUpId = createRecapFollowUpId();
+    if (
+      recap.status !== "success" ||
+      !recap.summary.trim() ||
+      recap.followUps.some((followUp) => followUp.status === "loading")
+    ) {
+      return;
+    }
+
+    const requestContext: {
+      bookTitle: string;
+      pages: RecapPage[];
+      summary: string;
+      history: RecapFollowUpHistoryEntry[];
+    } = {
+      bookTitle: recap.bookTitle,
+      pages: recap.pages,
+      summary: recap.summary,
+      history: recap.followUps
+        .filter((followUp) => followUp.status === "success")
+        .map((followUp) => ({
+          question: followUp.question,
+          answer: followUp.answer,
+        })),
+    };
+
+    setRecap((previous) => {
+      if (
+        previous.status !== "success" ||
+        !previous.summary.trim() ||
+        previous.followUps.some((followUp) => followUp.status === "loading")
+      ) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        followUps: [
+          ...previous.followUps,
+          {
+            id: followUpId,
+            status: "loading",
+            question: trimmedQuestion,
+            answer: "",
+            error: "",
+          },
+        ],
+      };
+    });
+
+    try {
+      const answer = await generateAiRecapFollowUp({
+        settings,
+        bookTitle: requestContext.bookTitle,
+        pages: requestContext.pages,
+        summary: requestContext.summary,
+        history: requestContext.history,
+        question: trimmedQuestion,
+      });
+      setRecap((previous) => ({
+        ...previous,
+        followUps: previous.followUps.map((followUp) =>
+          followUp.id === followUpId
+            ? { ...followUp, status: "success", answer, error: "" }
+            : followUp,
+        ),
+      }));
+    } catch (error) {
+      setRecap((previous) => ({
+        ...previous,
+        followUps: previous.followUps.map((followUp) =>
+          followUp.id === followUpId
+            ? {
+                ...followUp,
+                status: "error",
+                answer: "",
+                error: error instanceof Error ? error.message : "Could not answer follow-up.",
+              }
+            : followUp,
+        ),
+      }));
     }
   }
 
@@ -760,6 +889,7 @@ export function App() {
           recapSummary={recap.summary}
           recapError={recap.error}
           recapSourceLabel={recap.sourceLabel}
+          recapFollowUps={recap.followUps}
           sentenceSubtitle={sentenceSubtitle}
           sentenceDifficulty={sentenceDifficulty}
           onPrevious={goPrevious}
@@ -768,9 +898,8 @@ export function App() {
           onBeginProgressJump={beginProgressJump}
           onProgressJump={jumpToProgressLocation}
           onRecap={handleRecap}
-          onCloseRecap={() =>
-            setRecap({ status: "idle", summary: "", error: "", sourceLabel: "" })
-          }
+          onRecapFollowUp={handleRecapFollowUp}
+          onCloseRecap={() => setRecap(createEmptyRecapState())}
         />
         <aside className="right-rail" aria-label="Reader tools">
           <StatsPanel days={readingStatsDays} />
@@ -784,6 +913,26 @@ export function App() {
       </div>
     </div>
   );
+}
+
+function createEmptyRecapState(): RecapState {
+  return {
+    status: "idle",
+    summary: "",
+    error: "",
+    sourceLabel: "",
+    bookTitle: "",
+    pages: [],
+    followUps: [],
+  };
+}
+
+function createRecapFollowUpId() {
+  if ("randomUUID" in crypto) {
+    return `recap-follow-up:${crypto.randomUUID()}`;
+  }
+
+  return `recap-follow-up:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 }
 
 function isSameReaderPosition(

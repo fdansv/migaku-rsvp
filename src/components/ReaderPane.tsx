@@ -1,4 +1,14 @@
-import { BookOpen, Check, ChevronLeft, ChevronRight, Pause, Play, Sparkles, X } from "lucide-react";
+import {
+  BookOpen,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Pause,
+  Play,
+  Send,
+  Sparkles,
+  X,
+} from "lucide-react";
 import {
   useLayoutEffect,
   useMemo,
@@ -45,6 +55,7 @@ interface ReaderPaneProps {
   recapSummary: string;
   recapError: string;
   recapSourceLabel: string;
+  recapFollowUps: RecapFollowUpView[];
   sentenceSubtitle: string;
   sentenceDifficulty: "none" | "i-plus-one" | "beyond-i-plus-one";
   onPrevious: () => void;
@@ -53,7 +64,16 @@ interface ReaderPaneProps {
   onBeginProgressJump: () => void;
   onProgressJump: (location: number) => void;
   onRecap: () => void;
+  onRecapFollowUp: (question: string) => void;
   onCloseRecap: () => void;
+}
+
+interface RecapFollowUpView {
+  id: string;
+  status: "loading" | "success" | "error";
+  question: string;
+  answer: string;
+  error: string;
 }
 
 export function ReaderPane({
@@ -76,6 +96,7 @@ export function ReaderPane({
   recapSummary,
   recapError,
   recapSourceLabel,
+  recapFollowUps,
   sentenceSubtitle,
   sentenceDifficulty,
   onPrevious,
@@ -84,6 +105,7 @@ export function ReaderPane({
   onBeginProgressJump,
   onProgressJump,
   onRecap,
+  onRecapFollowUp,
   onCloseRecap,
 }: ReaderPaneProps) {
   const sentenceTrackRef = useRef<HTMLSpanElement>(null);
@@ -93,7 +115,9 @@ export function ReaderPane({
   const [progressEditing, setProgressEditing] = useState(false);
   const [progressInput, setProgressInput] = useState("");
   const [progressInputInvalid, setProgressInputInvalid] = useState(false);
+  const [recapFollowUpInput, setRecapFollowUpInput] = useState("");
   const displayTokenIndexSet = useMemo(() => new Set(displayTokenIndexes), [displayTokenIndexes]);
+  const recapFollowUpPending = recapFollowUps.some((followUp) => followUp.status === "loading");
   const remainingReadingLabel =
     remainingReadingDurationMs === null ? "" : formatReadingDuration(remainingReadingDurationMs);
   const sentenceContextBefore =
@@ -131,6 +155,12 @@ export function ReaderPane({
     progressInputRef.current?.focus();
     progressInputRef.current?.select();
   }, [progressEditing]);
+
+  useLayoutEffect(() => {
+    if (recapStatus !== "success") {
+      setRecapFollowUpInput("");
+    }
+  }, [recapStatus]);
 
   useLayoutEffect(() => {
     const display = rsvpDisplayRef.current;
@@ -326,13 +356,78 @@ export function ReaderPane({
                   <X size={16} aria-hidden="true" />
                 </button>
               </div>
-              <p className="recap-text">
+              <div
+                key={`recap:${recapStatus}:${recapSummary}:${recapError}`}
+                className="recap-copy recap-text"
+                translate="no"
+              >
                 {recapStatus === "loading"
                   ? "Waiting for the configured AI endpoint."
                   : recapStatus === "error"
                     ? recapError
                     : recapSummary}
-              </p>
+              </div>
+              {recapStatus === "success" ? (
+                <>
+                  {recapFollowUps.length > 0 ? (
+                    <div className="recap-followups" aria-live="polite">
+                      {recapFollowUps.map((followUp) => (
+                        <article
+                          className="recap-followup"
+                          key={`${followUp.id}:${followUp.status}`}
+                        >
+                          <div className="recap-followup-question">
+                            <span className="recap-followup-label">You</span>
+                            <div className="recap-copy" translate="no">
+                              {followUp.question}
+                            </div>
+                          </div>
+                          <div
+                            className={`recap-followup-answer${
+                              followUp.status === "error" ? " recap-followup-answer--error" : ""
+                            }`}
+                          >
+                            <span className="recap-followup-label">Answer</span>
+                            <div className="recap-copy" translate="no">
+                              {followUp.status === "loading"
+                                ? "Answering..."
+                                : followUp.status === "error"
+                                  ? followUp.error
+                                  : followUp.answer}
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                  <form
+                    className="recap-followup-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      submitRecapFollowUp();
+                    }}
+                  >
+                    <input
+                      className="recap-followup-input"
+                      type="text"
+                      aria-label="Follow-up question"
+                      placeholder="Ask a follow-up"
+                      disabled={recapFollowUpPending}
+                      value={recapFollowUpInput}
+                      onChange={(event) => setRecapFollowUpInput(event.target.value)}
+                    />
+                    <button
+                      className="recap-followup-send"
+                      type="submit"
+                      aria-label="Send follow-up"
+                      disabled={recapFollowUpPending || !recapFollowUpInput.trim()}
+                    >
+                      <Send size={15} aria-hidden="true" />
+                      <span>Send</span>
+                    </button>
+                  </form>
+                </>
+              ) : null}
             </section>
           ) : null}
 
@@ -476,6 +571,16 @@ export function ReaderPane({
     onProgressJump(location);
     setProgressEditing(false);
     setProgressInputInvalid(false);
+  }
+
+  function submitRecapFollowUp() {
+    const question = recapFollowUpInput.trim();
+    if (!question || recapFollowUpPending) {
+      return;
+    }
+
+    onRecapFollowUp(question);
+    setRecapFollowUpInput("");
   }
 }
 

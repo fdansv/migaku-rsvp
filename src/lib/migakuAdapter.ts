@@ -44,24 +44,10 @@ export function useMigakuAdapter(
 ) {
   const [scan, setScan] = useState<MigakuScanResult>(EMPTY_SCAN);
   const latestRef = useRef({ sentence, activeTokenIndexes });
-  const activeTokenKey = activeTokenIndexes.join(",");
 
   useEffect(() => {
     latestRef.current = { sentence, activeTokenIndexes };
   }, [sentence, activeTokenIndexes]);
-
-  useEffect(() => {
-    if (!rootRef.current || !sentence) {
-      return;
-    }
-
-    requestMigakuParse();
-    const timers = [80, 260].map((delay) => window.setTimeout(requestMigakuParse, delay));
-
-    return () => {
-      timers.forEach((timer) => window.clearTimeout(timer));
-    };
-  }, [rootRef, sentence?.id, activeTokenKey]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -89,32 +75,15 @@ export function useMigakuAdapter(
         current.sentence,
       );
       setScan({ ...result, timedOut: timedOut && !result.parsed });
-      markActiveMigakuTokens(root, current.sentence.id, current.activeTokenIndexes);
-      if (visibleRootRef.current) {
-        markActiveMigakuTokens(
-          visibleRootRef.current,
-          current.sentence.id,
-          current.activeTokenIndexes,
-        );
-        syncVisibleSentenceContext(
-          visibleRootRef.current,
-          current.sentence,
-          current.activeTokenIndexes,
-        );
-      }
+      updateVisibleActiveTokens(
+        visibleRootRef.current,
+        current.sentence,
+        current.activeTokenIndexes,
+      );
     };
 
     const observer = new MutationObserver(() => scanNow(false));
     observer.observe(root, {
-      attributes: true,
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-    const visibleObserver = visibleRootRef.current
-      ? new MutationObserver(() => scanNow(false))
-      : null;
-    visibleObserver?.observe(visibleRootRef.current!, {
       attributes: true,
       childList: true,
       subtree: true,
@@ -129,7 +98,6 @@ export function useMigakuAdapter(
     return () => {
       finished = true;
       observer.disconnect();
-      visibleObserver?.disconnect();
       timers.forEach((timer) => window.clearTimeout(timer));
       window.clearTimeout(timeout);
     };
@@ -138,20 +106,43 @@ export function useMigakuAdapter(
   useEffect(() => {
     const root = rootRef.current;
     if (root && sentence) {
-      const result = scanVisibleDisplay(scanMigakuSurface(root, sentence), visibleRootRef.current, sentence);
+      const result = scanVisibleDisplay(
+        scanMigakuSurface(root, sentence),
+        visibleRootRef.current,
+        sentence,
+      );
       setScan(result);
-      markActiveMigakuTokens(root, sentence.id, activeTokenIndexes);
-      if (visibleRootRef.current) {
-        markActiveMigakuTokens(visibleRootRef.current, sentence.id, activeTokenIndexes);
-        syncVisibleSentenceContext(visibleRootRef.current, sentence, activeTokenIndexes);
-      }
+      updateVisibleActiveTokens(
+        visibleRootRef.current,
+        sentence,
+        latestRef.current.activeTokenIndexes,
+      );
     }
-  }, [rootRef, visibleRootRef, sentence?.id, activeTokenIndexes, scan.assignedTokenCount]);
+  }, [rootRef, visibleRootRef, sentence?.id, scan.assignedTokenCount]);
+
+  useEffect(() => {
+    if (sentence) {
+      updateVisibleActiveTokens(visibleRootRef.current, sentence, activeTokenIndexes);
+    }
+  }, [visibleRootRef, sentence?.id, activeTokenIndexes]);
 
   return useMemo(
     () => (sentence && scan.sentenceId && scan.sentenceId !== sentence.id ? EMPTY_SCAN : scan),
     [scan, sentence?.id],
   );
+}
+
+function updateVisibleActiveTokens(
+  visibleRoot: HTMLElement | null,
+  sentence: Sentence,
+  activeTokenIndexes: number[],
+) {
+  if (!visibleRoot) {
+    return;
+  }
+
+  markActiveMigakuTokens(visibleRoot, sentence.id, activeTokenIndexes);
+  syncVisibleSentenceContext(visibleRoot, sentence, activeTokenIndexes);
 }
 
 export function scanMigakuSurface(root: HTMLElement, sentence: Sentence): MigakuScanResult {
