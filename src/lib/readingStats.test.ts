@@ -4,6 +4,8 @@ import { createSentence } from "./text";
 import {
   estimateRemainingReadingTime,
   formatReadingDuration,
+  getBookProgressDays,
+  getBookReadingStats,
   getDailyReadingStats,
   getReadingStepStats,
 } from "./readingStats";
@@ -59,6 +61,104 @@ describe("reading stats", () => {
     ]);
     expect(days[0]).toMatchObject({ wordCount: 20, characterCount: 100 });
     expect(days[1]).toMatchObject({ wordCount: 140, characterCount: 580 });
+  });
+
+  it("summarizes reading sessions for a single book", () => {
+    const sessions: ReadingSession[] = [
+      {
+        id: "first",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 9, 23, 50).toISOString(),
+        endedAt: new Date(2026, 0, 10, 0, 10).toISOString(),
+        durationMs: 20 * 60_000,
+        wordCount: 80,
+        characterCount: 320,
+        startLocation: createLocation(1, 100),
+        endLocation: createLocation(21, 100),
+      },
+      {
+        id: "second",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 12, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 12, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 40,
+        characterCount: 200,
+        startLocation: createLocation(21, 100),
+        endLocation: createLocation(31, 100),
+      },
+      {
+        id: "other-book",
+        bookId: "book:2",
+        startedAt: new Date(2026, 0, 12, 10, 0).toISOString(),
+        endedAt: new Date(2026, 0, 12, 10, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 400,
+        characterCount: 1600,
+        startLocation: createLocation(1, 100),
+        endLocation: createLocation(11, 100),
+      },
+    ];
+
+    expect(getBookReadingStats(sessions, "book:1")).toMatchObject({
+      totalDurationMs: 30 * 60_000,
+      wordCount: 120,
+      characterCount: 520,
+      sessionCount: 2,
+      activeDayCount: 3,
+      wordsPerMinute: 4,
+      charactersPerMinute: 520 / 30,
+    });
+  });
+
+  it("builds cumulative book progress from daily reading percentages", () => {
+    const sessions: ReadingSession[] = [
+      {
+        id: "day-one",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 10, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 10,
+        characterCount: 40,
+        startLocation: createLocation(0, 100),
+        endLocation: createLocation(1, 100),
+      },
+      {
+        id: "day-two",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 11, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 11, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 10,
+        characterCount: 40,
+        startLocation: createLocation(1, 100),
+        endLocation: createLocation(2, 100),
+      },
+      {
+        id: "other-book",
+        bookId: "book:2",
+        startedAt: new Date(2026, 0, 11, 10, 0).toISOString(),
+        endedAt: new Date(2026, 0, 11, 10, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 10,
+        characterCount: 40,
+        startLocation: createLocation(20, 100),
+        endLocation: createLocation(30, 100),
+      },
+    ];
+
+    expect(
+      getBookProgressDays(sessions, "book:1", new Date(2026, 0, 12, 12), 3).map((day) => ({
+        date: day.date,
+        dailyPercent: day.dailyPercent,
+        cumulativePercent: day.cumulativePercent,
+      })),
+    ).toEqual([
+      { date: "2026-01-10", dailyPercent: 1, cumulativePercent: 1 },
+      { date: "2026-01-11", dailyPercent: 1, cumulativePercent: 2 },
+      { date: "2026-01-12", dailyPercent: 0, cumulativePercent: 2 },
+    ]);
   });
 
   it("estimates remaining book time from matching progress-location spans", () => {

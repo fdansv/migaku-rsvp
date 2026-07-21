@@ -107,10 +107,12 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
-  await page.locator("label", { hasText: "Group by" }).locator("select").selectOption("characters");
+  const groupBy = page.locator("fieldset", { hasText: "Group by" });
+  await expect(groupBy.getByRole("button")).toHaveText(["Words", "Characters"]);
+  await groupBy.getByRole("button", { name: "Characters" }).click();
   await setRangeValue(page.locator("label", { hasText: "Characters" }).locator("input"), "3");
   await expectRsvpDisplayText(page, "猫が走");
-  await page.locator("label", { hasText: "Group by" }).locator("select").selectOption("words");
+  await groupBy.getByRole("button", { name: "Words" }).click();
   await expectRsvpDisplayText(page, "猫が走る。");
   await page.getByRole("button", { name: "Never" }).click();
   await expect(page.getByRole("button", { name: "Never" })).toHaveAttribute("aria-pressed", "true");
@@ -495,7 +497,20 @@ test("restores the selected server-library book after refresh", async ({ page },
   });
 });
 
-test("loads server reading stats and migrates local reading sessions", async ({ page }) => {
+test("loads server reading stats and migrates local reading sessions", async ({
+  page,
+}, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "server-stats.epub");
+  await createSmallEpub(epubPath);
+  const epubBytes = await fs.readFile(epubPath);
+  const serverBook = {
+    id: "server-book",
+    fileName: "server-book.epub",
+    relativePath: "server-book.epub",
+    modifiedAt: "2026-07-05T00:00:00.000Z",
+    size: epubBytes.byteLength,
+    progress: { sentenceIndex: 0, tokenIndex: 0 },
+  };
   const nowMs = Date.now();
   const serverSession = createReadingSessionFixture({
     id: "server-session",
@@ -521,10 +536,20 @@ test("loads server reading stats and migrates local reading sessions", async ({ 
   const migratedSessions: unknown[] = [];
 
   await page.route("**/api/library/status", async (route) => {
-    await route.fulfill({ status: 200, json: { enabled: true, bookCount: 0 } });
+    await route.fulfill({ status: 200, json: { enabled: true, bookCount: 1 } });
   });
   await page.route("**/api/books", async (route) => {
-    await route.fulfill({ status: 200, json: [] });
+    await route.fulfill({ status: 200, json: [serverBook] });
+  });
+  await page.route(/\/api\/books\/[^/]+\/file$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      body: epubBytes,
+      headers: { "Content-Type": "application/epub+zip" },
+    });
+  });
+  await page.route(/\/api\/books\/[^/]+\/progress$/, async (route) => {
+    await route.fulfill({ status: 200, json: serverBook.progress });
   });
   await page.route("**/api/reading-sessions", async (route) => {
     const request = route.request();
@@ -578,9 +603,16 @@ test("loads server reading stats and migrates local reading sessions", async ({ 
     .toHaveText("17m");
   await expect(page.locator(".stats-summary span", { hasText: "Chars" }).locator("strong"))
     .toHaveText("600");
-  await expect(page.locator(".reading-chart-day")).toHaveCount(11);
-  const todayChartBar = page.locator(".reading-chart-bar-track").last();
-  const todayChartTooltip = page.locator(".reading-chart-tooltip").last();
+  await expect(page.locator(".book-stats-grid span", { hasText: "Time read" }).locator("strong"))
+    .toHaveText("21m");
+  await expect(page.locator(".book-stats-grid span", { hasText: "Pace" }).locator("strong"))
+    .toHaveText("29/min");
+  await expect(page.locator(".book-stats-meta")).toContainText("616 characters");
+  await expect(page.locator(".book-stats-meta")).toContainText("3 sessions");
+  const dailyTimeChart = page.locator(".stats-section > .reading-chart");
+  await expect(dailyTimeChart.locator(".reading-chart-day")).toHaveCount(11);
+  const todayChartBar = dailyTimeChart.locator(".reading-chart-bar-track").last();
+  const todayChartTooltip = dailyTimeChart.locator(".reading-chart-tooltip").last();
   await expect(todayChartTooltip).toBeHidden();
   await todayChartBar.hover();
   await expect(todayChartTooltip).toHaveText("17 min");
@@ -589,6 +621,13 @@ test("loads server reading stats and migrates local reading sessions", async ({ 
   await expect(todayChartTooltip).toBeHidden();
   await todayChartBar.click();
   await expect(todayChartTooltip).toBeVisible();
+  const bookProgressChart = page.locator(".book-progress-chart");
+  await expect(bookProgressChart.locator(".reading-chart-day")).toHaveCount(11);
+  const latestBookProgressBar = bookProgressChart.locator(".reading-chart-bar-track").last();
+  const latestBookProgressTooltip = bookProgressChart.locator(".reading-chart-tooltip").last();
+  await latestBookProgressBar.hover();
+  await expect(latestBookProgressTooltip).toHaveText("3% total, +2%");
+  await expect(latestBookProgressTooltip).toBeVisible();
   await expect.poll(() => migratedSessions).toContainEqual(localSession);
 });
 

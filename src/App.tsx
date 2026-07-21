@@ -10,6 +10,8 @@ import { useFileDrop } from "./hooks/useFileDrop";
 import { useMigakuAdapter } from "./lib/migakuAdapter";
 import {
   estimateRemainingReadingTime,
+  getBookProgressDays,
+  getBookReadingStats,
   getDailyReadingStats,
   getReadingStepStats,
   type ReadingStepStats,
@@ -268,6 +270,15 @@ export function App() {
   const readingStatsDays = useMemo(
     () => getDailyReadingStats(readingSessions, new Date(), READING_STATS_DAY_COUNT),
     [readingSessions],
+  );
+  const bookReadingStats = useMemo(
+    () => getBookReadingStats(readingSessions, selectedBookId),
+    [readingSessions, selectedBookId],
+  );
+  const bookProgressDays = useMemo(
+    () =>
+      getBookProgressDays(readingSessions, selectedBookId, new Date(), READING_STATS_DAY_COUNT),
+    [readingSessions, selectedBookId],
   );
   const remainingReadingTimeEstimate = useMemo(
     () =>
@@ -902,7 +913,12 @@ export function App() {
           onCloseRecap={() => setRecap(createEmptyRecapState())}
         />
         <aside className="right-rail" aria-label="Reader tools">
-          <StatsPanel days={readingStatsDays} />
+          <StatsPanel
+            days={readingStatsDays}
+            bookStats={bookReadingStats}
+            bookProgressDays={bookProgressDays}
+            progressPercent={selectedBookId ? progress.percent : null}
+          />
           <SettingsPanel
             settings={settings}
             isOpen={settingsOpen}

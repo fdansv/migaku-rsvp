@@ -71,21 +71,12 @@ export function SettingsPanel({
             format={(value) => String(value)}
             onValue={(value) => onChange({ stepsPerMinute: value })}
           />
-          <label>
-            Group by
-            <select
-              value={settings.stepGroupingMode}
-              onChange={(event) =>
-                onChange({ stepGroupingMode: event.currentTarget.value as StepGroupingMode })
-              }
-            >
-              {STEP_GROUPING_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <OptionGroup
+            label="Group by"
+            options={STEP_GROUPING_OPTIONS}
+            value={settings.stepGroupingMode}
+            onValue={(value) => onChange({ stepGroupingMode: value })}
+          />
           <RangeSetting
             label="Font"
             min={36}
@@ -186,7 +177,11 @@ function OptionGroup<T extends string>({
   return (
     <fieldset className="setting-group">
       <legend>{label}</legend>
-      <div className="setting-options" role="group" aria-label={label}>
+      <div
+        className={`setting-options setting-options--${options.length}`}
+        role="group"
+        aria-label={label}
+      >
         {options.map((option) => (
           <button
             key={option.value}

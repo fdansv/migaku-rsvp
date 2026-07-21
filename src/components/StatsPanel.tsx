@@ -1,14 +1,32 @@
-import { BarChart3 } from "lucide-react";
+import { BarChart3, BookOpen } from "lucide-react";
 import { useMemo, useState, type CSSProperties } from "react";
-import { formatReadingDuration, type ReadingStatsDay } from "../lib/readingStats";
+import {
+  formatReadingDuration,
+  type BookProgressDay,
+  type BookReadingStats,
+  type ReadingStatsDay,
+} from "../lib/readingStats";
 
 interface StatsPanelProps {
   days: ReadingStatsDay[];
+  bookStats: BookReadingStats | null;
+  bookProgressDays: BookProgressDay[];
+  progressPercent: number | null;
 }
 
-export function StatsPanel({ days }: StatsPanelProps) {
+export function StatsPanel({
+  days,
+  bookStats,
+  bookProgressDays,
+  progressPercent,
+}: StatsPanelProps) {
   const [activeTooltipDate, setActiveTooltipDate] = useState<string | null>(null);
+  const [activeBookProgressDate, setActiveBookProgressDate] = useState<string | null>(null);
   const chartDays = useMemo(() => getVisibleChartDays(days), [days]);
+  const visibleBookProgressDays = useMemo(
+    () => getVisibleBookProgressDays(bookProgressDays),
+    [bookProgressDays],
+  );
   const maxDurationMs = Math.max(...chartDays.map((day) => day.durationMs), 0);
   const today = days.at(-1);
 
@@ -28,6 +46,89 @@ export function StatsPanel({ days }: StatsPanelProps) {
           <small>Chars</small>
         </span>
       </div>
+      {bookStats ? (
+        <div className="book-stats" aria-labelledby="book-stats-title">
+          <div className="stats-subtitle" id="book-stats-title">
+            <BookOpen size={15} aria-hidden="true" />
+            <span>This book</span>
+          </div>
+          <div className="book-stats-grid">
+            <StatTile
+              value={formatReadingDuration(bookStats.totalDurationMs)}
+              label="Time read"
+            />
+            <StatTile value={formatProgressPercent(progressPercent)} label="Progress" />
+            <StatTile value={formatReadingRate(bookStats.charactersPerMinute)} label="Pace" />
+            <StatTile value={bookStats.activeDayCount.toLocaleString()} label="Days" />
+          </div>
+          <p className="book-stats-meta">
+            <span>{bookStats.characterCount.toLocaleString()} characters</span>
+            <span>{formatSessionCount(bookStats.sessionCount)}</span>
+            <span>{formatLastRead(bookStats.lastReadAt)}</span>
+          </p>
+          <div
+            className="reading-chart book-progress-chart"
+            role="group"
+            aria-label="Cumulative book progress by day"
+          >
+            <div className="reading-chart-axis" aria-hidden="true">
+              <span>100%</span>
+              <span>50%</span>
+              <span>0%</span>
+            </div>
+            <div
+              className="reading-chart-bars"
+              style={
+                { "--reading-chart-days": visibleBookProgressDays.length } as CSSProperties
+              }
+            >
+              {visibleBookProgressDays.map((day, index) => {
+                const height =
+                  day.cumulativePercent > 0 ? Math.max(day.cumulativePercent, 3) : 0;
+                const tooltipLabel = formatBookProgressTooltip(day);
+                const shouldShowLabel = shouldShowBookProgressDayLabel(
+                  day,
+                  index,
+                  visibleBookProgressDays.length,
+                );
+
+                return (
+                  <div
+                    className={`reading-chart-day${
+                      shouldShowLabel ? " has-visible-label" : ""
+                    }`}
+                    key={day.date}
+                  >
+                    <button
+                      className={`reading-chart-bar-track${
+                        activeBookProgressDate === day.date ? " is-active" : ""
+                      }`}
+                      type="button"
+                      aria-label={`${formatChartDateLabel(day.date)}: ${tooltipLabel}`}
+                      onClick={() =>
+                        setActiveBookProgressDate((currentDate) =>
+                          currentDate === day.date ? null : day.date,
+                        )
+                      }
+                      onBlur={() => setActiveBookProgressDate(null)}
+                    >
+                      <div
+                        className="reading-chart-bar"
+                        style={{ height: `${height}%` }}
+                        aria-hidden="true"
+                      />
+                      <span className="reading-chart-tooltip" role="tooltip">
+                        {tooltipLabel}
+                      </span>
+                    </button>
+                    <span aria-hidden={!shouldShowLabel}>{formatChartTickLabel(day.date)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div
         className="reading-chart"
         role="group"
@@ -85,10 +186,30 @@ export function StatsPanel({ days }: StatsPanelProps) {
   );
 }
 
+function StatTile({ value, label }: { value: string; label: string }) {
+  return (
+    <span>
+      <strong>{value}</strong>
+      <small>{label}</small>
+    </span>
+  );
+}
+
 export function getVisibleChartDays(days: ReadingStatsDay[]) {
   const firstDayWithDataIndex = days.findIndex((day) => day.durationMs > 0);
   if (firstDayWithDataIndex >= 0) {
     return days.slice(firstDayWithDataIndex);
+  }
+
+  return days.slice(-1);
+}
+
+function getVisibleBookProgressDays(days: BookProgressDay[]) {
+  const firstDayWithProgressIndex = days.findIndex(
+    (day) => day.dailyPercent > 0 || day.cumulativePercent > 0,
+  );
+  if (firstDayWithProgressIndex >= 0) {
+    return days.slice(firstDayWithProgressIndex);
   }
 
   return days.slice(-1);
@@ -102,6 +223,14 @@ function shouldShowChartDayLabel(day: ReadingStatsDay, index: number, dayCount: 
   return index === 0 || index === dayCount - 1 || day.durationMs > 0 || index % 7 === 0;
 }
 
+function shouldShowBookProgressDayLabel(day: BookProgressDay, index: number, dayCount: number) {
+  if (dayCount <= 14) {
+    return true;
+  }
+
+  return index === 0 || index === dayCount - 1 || day.dailyPercent > 0 || index % 7 === 0;
+}
+
 function formatReadingMinutes(durationMs: number) {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
     return "0 min";
@@ -113,6 +242,83 @@ function formatReadingMinutes(durationMs: number) {
 
   const minutes = Math.max(1, Math.round(durationMs / 60_000));
   return `${minutes} min`;
+}
+
+function formatProgressPercent(progressPercent: number | null) {
+  if (!Number.isFinite(progressPercent)) {
+    return "0%";
+  }
+
+  return `${Math.max(0, Math.min(100, Math.round(progressPercent ?? 0)))}%`;
+}
+
+function formatReadingRate(charactersPerMinute: number) {
+  if (!Number.isFinite(charactersPerMinute) || charactersPerMinute <= 0) {
+    return "0/min";
+  }
+
+  return `${Math.max(1, Math.round(charactersPerMinute)).toLocaleString()}/min`;
+}
+
+function formatBookProgressTooltip(day: BookProgressDay) {
+  return `${formatBookProgressPercent(day.cumulativePercent)} total, +${formatBookProgressPercent(
+    day.dailyPercent,
+  )}`;
+}
+
+function formatBookProgressPercent(percent: number) {
+  if (!Number.isFinite(percent) || percent <= 0) {
+    return "0%";
+  }
+
+  if (percent < 0.1) {
+    return "<0.1%";
+  }
+
+  const rounded = Math.round(percent * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}%`;
+}
+
+function formatSessionCount(sessionCount: number) {
+  return `${sessionCount.toLocaleString()} ${sessionCount === 1 ? "session" : "sessions"}`;
+}
+
+function formatLastRead(lastReadAt: string | null) {
+  if (!lastReadAt) {
+    return "Not read yet";
+  }
+
+  const lastReadDate = getLocalDate(lastReadAt);
+  if (!lastReadDate) {
+    return "Last read";
+  }
+
+  const today = startOfLocalDay(new Date());
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const lastReadDay = startOfLocalDay(lastReadDate);
+
+  if (lastReadDay.getTime() === today.getTime()) {
+    return "Last read today";
+  }
+
+  if (lastReadDay.getTime() === yesterday.getTime()) {
+    return "Last read yesterday";
+  }
+
+  return `Last read ${new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(lastReadDate)}`;
+}
+
+function getLocalDate(dateValue: string) {
+  const date = new Date(dateValue);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function formatChartDateLabel(dateKey: string) {
