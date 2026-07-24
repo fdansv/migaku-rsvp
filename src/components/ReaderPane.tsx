@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent,
   type RefObject,
 } from "react";
 import type {
@@ -66,6 +67,12 @@ interface ReaderPaneProps {
   onRecap: () => void;
   onRecapFollowUp: (question: string) => void;
   onCloseRecap: () => void;
+  onMigakuLookup: (lookup: MigakuLookupDetails) => void;
+}
+
+interface MigakuLookupDetails {
+  term: string;
+  status?: MigakuTokenStatus;
 }
 
 interface RecapFollowUpView {
@@ -107,6 +114,7 @@ export function ReaderPane({
   onRecap,
   onRecapFollowUp,
   onCloseRecap,
+  onMigakuLookup,
 }: ReaderPaneProps) {
   const sentenceTrackRef = useRef<HTMLSpanElement>(null);
   const sentenceScaleRef = useRef<HTMLSpanElement>(null);
@@ -221,6 +229,28 @@ export function ReaderPane({
     migaku.tokenGroups,
     rsvpDisplayRef,
   ]);
+
+  function handleMigakuTokenPointerUp(event: PointerEvent<HTMLDivElement>) {
+    if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) {
+      return;
+    }
+
+    const target = event.target instanceof Element ? event.target : null;
+    const token = target?.closest<HTMLElement>(".migaku-token[data-mgk-term]");
+    if (!token || !event.currentTarget.contains(token)) {
+      return;
+    }
+
+    const term = token.getAttribute("data-mgk-term")?.trim();
+    if (!term) {
+      return;
+    }
+
+    onMigakuLookup({
+      term,
+      status: getLookupStatusFromElement(token),
+    });
+  }
 
   return (
     <main
@@ -457,6 +487,7 @@ export function ReaderPane({
                 }
               }}
               onMouseLeave={() => setSentenceContextHovered(false)}
+              onPointerUpCapture={handleMigakuTokenPointerUp}
               style={{ "--reader-font-size": `${fontSize}px` } as CSSProperties}
             >
               <span
@@ -604,6 +635,42 @@ function getActiveStatus(
     displayTokenIndexes.map((tokenIndex) => statuses[tokenIndex]).find(Boolean) ??
     "unparsed"
   );
+}
+
+function getLookupStatusFromElement(element: HTMLElement): MigakuTokenStatus | undefined {
+  const statusAttribute = element.getAttribute("data-mgk-known-status")?.trim().toLowerCase();
+  const attributeStatus = toMigakuTokenStatus(statusAttribute);
+  if (attributeStatus) {
+    return attributeStatus;
+  }
+
+  for (const className of Array.from(element.classList)) {
+    const classStatus = toMigakuTokenStatus(
+      className.startsWith("rsvp-display-token--")
+        ? className.slice("rsvp-display-token--".length)
+        : className,
+    );
+    if (classStatus) {
+      return classStatus;
+    }
+  }
+
+  return undefined;
+}
+
+function toMigakuTokenStatus(value: string | undefined): MigakuTokenStatus | undefined {
+  if (
+    value === "unknown" ||
+    value === "seen" ||
+    value === "known" ||
+    value === "ignored" ||
+    value === "tracked" ||
+    value === "unparsed"
+  ) {
+    return value;
+  }
+
+  return undefined;
 }
 
 function reactDataAttributes(attributes: Record<string, string>) {

@@ -1169,12 +1169,28 @@ progress::-webkit-progress-value {
   overflow-wrap: anywhere;
 }
 
+.book-chart-caption {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .book-progress-chart {
   margin-top: 2px;
 }
 
 .book-progress-chart .reading-chart-bar {
   background: color-mix(in srgb, var(--accent) 72%, var(--text));
+}
+
+.book-speed-chart .reading-chart-bar {
+  background: color-mix(in srgb, var(--accent) 58%, #a15c24);
+}
+
+.book-lookups-chart .reading-chart-bar {
+  background: color-mix(in srgb, var(--accent) 54%, #25846f);
 }
 
 .reading-chart {

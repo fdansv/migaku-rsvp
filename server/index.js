@@ -19,6 +19,10 @@ const READING_SESSIONS_PATH = path.resolve(
   process.env.MIGAKU_RSVP_READING_SESSIONS_PATH ??
     path.join(path.dirname(PROGRESS_PATH), "reading-sessions.json"),
 );
+const LOOKUP_EVENTS_PATH = path.resolve(
+  process.env.MIGAKU_RSVP_LOOKUP_EVENTS_PATH ??
+    path.join(path.dirname(PROGRESS_PATH), "lookup-events.json"),
+);
 const DIST_DIR = path.resolve(fileURLToPath(new URL("../dist", import.meta.url)));
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const MAX_AI_PROXY_BODY_BYTES = normalizePositiveInteger(
@@ -54,6 +58,7 @@ const AI_TRANSLATION_MODEL =
   AI_RECAP_MODEL;
 const AI_TOKEN_PARAMETER = normalizeAiTokenParameter(process.env.MIGAKU_RSVP_AI_TOKEN_PARAMETER);
 let readingSessionsWriteQueue = Promise.resolve();
+let lookupEventsWriteQueue = Promise.resolve();
 
 const MIME_TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -158,6 +163,11 @@ async function routeApiRequest(request, response, url) {
     return;
   }
 
+  if (url.pathname === "/api/lookup-events") {
+    await routeLookupEventsRequest(request, response);
+    return;
+  }
+
   const fileMatch = url.pathname.match(/^\/api\/books\/([^/]+)\/file$/);
   if (request.method === "GET" && fileMatch) {
     const book = await findLibraryBook(fileMatch[1]);
@@ -203,6 +213,27 @@ async function routeReadingSessionsRequest(request, response) {
   }
 
   await mutateReadingSessionsStore((sessions) => upsertReadingSession(sessions, body));
+  sendJson(response, 200, body);
+}
+
+async function routeLookupEventsRequest(request, response) {
+  if (request.method === "GET") {
+    sendJson(response, 200, await readLookupEventsStore());
+    return;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const body = await readJsonBody(request);
+  if (!isLookupEvent(body)) {
+    sendJson(response, 400, { error: "Lookup event payload is invalid." });
+    return;
+  }
+
+  await mutateLookupEventsStore((events) => upsertLookupEvent(events, body));
   sendJson(response, 200, body);
 }
 
@@ -466,14 +497,55 @@ async function mutateReadingSessionsStore(mutator) {
   return operation;
 }
 
+async function readLookupEventsStore() {
+  try {
+    const text = await readFile(LOOKUP_EVENTS_PATH, "utf8");
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed.filter(isLookupEvent).sort(compareLookupEvents) : [];
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function writeLookupEventsStore(events) {
+  await mkdir(path.dirname(LOOKUP_EVENTS_PATH), { recursive: true });
+  const tempPath = createTempStorePath(LOOKUP_EVENTS_PATH);
+  await writeFile(tempPath, `${JSON.stringify(events.sort(compareLookupEvents), null, 2)}\n`);
+  await rename(tempPath, LOOKUP_EVENTS_PATH);
+}
+
+async function mutateLookupEventsStore(mutator) {
+  const operation = lookupEventsWriteQueue.then(async () => {
+    const events = await readLookupEventsStore();
+    const nextEvents = mutator(events);
+    await writeLookupEventsStore(nextEvents);
+    return nextEvents;
+  });
+  lookupEventsWriteQueue = operation.catch(() => {});
+  return operation;
+}
+
 function upsertReadingSession(sessions, session) {
   const sessionsById = new Map(sessions.map((candidate) => [candidate.id, candidate]));
   sessionsById.set(session.id, session);
   return Array.from(sessionsById.values()).sort(compareReadingSessions);
 }
 
+function upsertLookupEvent(events, event) {
+  const eventsById = new Map(events.map((candidate) => [candidate.id, candidate]));
+  eventsById.set(event.id, event);
+  return Array.from(eventsById.values()).sort(compareLookupEvents);
+}
+
 function compareReadingSessions(left, right) {
   return left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id);
+}
+
+function compareLookupEvents(left, right) {
+  return left.occurredAt.localeCompare(right.occurredAt) || left.id.localeCompare(right.id);
 }
 
 function createTempStorePath(storePath) {
@@ -531,6 +603,23 @@ function isReadingSession(value) {
   );
 }
 
+function isLookupEvent(value) {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.bookId === "string" &&
+    value.bookId.length > 0 &&
+    isIsoDateString(value.occurredAt) &&
+    typeof value.term === "string" &&
+    value.term.trim().length > 0 &&
+    (value.status === undefined || isMigakuTokenStatus(value.status)) &&
+    (value.readingSessionId === undefined || typeof value.readingSessionId === "string") &&
+    (value.sentenceId === undefined || typeof value.sentenceId === "string") &&
+    (value.position === undefined || isReaderPosition(value.position))
+  );
+}
+
 function isReadingSessionLocation(value) {
   return (
     isRecord(value) &&
@@ -539,6 +628,17 @@ function isReadingSessionLocation(value) {
     value.progressCurrent >= 0 &&
     Number.isSafeInteger(value.progressTotal) &&
     value.progressTotal >= 0
+  );
+}
+
+function isMigakuTokenStatus(value) {
+  return (
+    value === "unknown" ||
+    value === "seen" ||
+    value === "known" ||
+    value === "ignored" ||
+    value === "tracked" ||
+    value === "unparsed"
   );
 }
 

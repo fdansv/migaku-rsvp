@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { ReadingSession, Sentence } from "../types";
+import type { LookupEvent, ReadingSession, Sentence } from "../types";
 import { createSentence } from "./text";
 import {
   estimateRemainingReadingTime,
   formatReadingDuration,
+  getBookLookupDays,
+  getBookLookupStats,
   getBookProgressDays,
   getBookReadingStats,
+  getBookSpeedDays,
+  getDailyLookupStats,
   getDailyReadingStats,
   getReadingStepStats,
 } from "./readingStats";
@@ -158,6 +162,108 @@ describe("reading stats", () => {
       { date: "2026-01-10", dailyPercent: 1, cumulativePercent: 1 },
       { date: "2026-01-11", dailyPercent: 1, cumulativePercent: 2 },
       { date: "2026-01-12", dailyPercent: 0, cumulativePercent: 2 },
+    ]);
+  });
+
+  it("calculates selected-book reading speed by day", () => {
+    const sessions: ReadingSession[] = [
+      {
+        id: "book-one",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 10, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 30,
+        characterCount: 300,
+        startLocation: createLocation(0, 100),
+        endLocation: createLocation(1, 100),
+      },
+      {
+        id: "book-two",
+        bookId: "book:2",
+        startedAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 10, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 90,
+        characterCount: 900,
+        startLocation: createLocation(0, 100),
+        endLocation: createLocation(1, 100),
+      },
+    ];
+
+    expect(getBookSpeedDays(sessions, "book:1", new Date(2026, 0, 10, 12), 1))
+      .toMatchObject([
+        {
+          date: "2026-01-10",
+          durationMs: 10 * 60_000,
+          characterCount: 300,
+          charactersPerMinute: 30,
+        },
+      ]);
+  });
+
+  it("aggregates lookup events into local days", () => {
+    const events: LookupEvent[] = [
+      {
+        id: "first",
+        bookId: "book:1",
+        occurredAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        term: "猫",
+        status: "known",
+      },
+      {
+        id: "second",
+        bookId: "book:1",
+        occurredAt: new Date(2026, 0, 10, 9, 5).toISOString(),
+        term: "走る",
+        status: "unknown",
+      },
+      {
+        id: "third",
+        bookId: "book:1",
+        occurredAt: new Date(2026, 0, 11, 9, 0).toISOString(),
+        term: "犬",
+      },
+    ];
+
+    expect(getDailyLookupStats(events, new Date(2026, 0, 11, 12), 3)).toMatchObject([
+      { date: "2026-01-09", lookupCount: 0 },
+      { date: "2026-01-10", lookupCount: 2 },
+      { date: "2026-01-11", lookupCount: 1 },
+    ]);
+  });
+
+  it("summarizes and charts selected-book lookup events", () => {
+    const events: LookupEvent[] = [
+      {
+        id: "book-one-first",
+        bookId: "book:1",
+        occurredAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        term: "猫",
+      },
+      {
+        id: "book-one-second",
+        bookId: "book:1",
+        occurredAt: new Date(2026, 0, 11, 9, 0).toISOString(),
+        term: "走る",
+      },
+      {
+        id: "other-book",
+        bookId: "book:2",
+        occurredAt: new Date(2026, 0, 11, 10, 0).toISOString(),
+        term: "犬",
+      },
+    ];
+
+    expect(getBookLookupStats(events, "book:1")).toMatchObject({
+      lookupCount: 2,
+      activeDayCount: 2,
+      firstLookupAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+      lastLookupAt: new Date(2026, 0, 11, 9, 0).toISOString(),
+    });
+    expect(getBookLookupDays(events, "book:1", new Date(2026, 0, 11, 12), 2)).toMatchObject([
+      { date: "2026-01-10", lookupCount: 1 },
+      { date: "2026-01-11", lookupCount: 1 },
     ]);
   });
 

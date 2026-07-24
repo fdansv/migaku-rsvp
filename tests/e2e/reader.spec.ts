@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createSmallEpub } from "../fixtures/createSmallEpub";
-import type { ReaderPosition, ReadingSession } from "../../src/types";
+import type { LookupEvent, ReaderPosition, ReadingSession } from "../../src/types";
 
 test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page }, testInfo) => {
   const epubPath = path.join(testInfo.outputDir, "small.epub");
@@ -533,7 +533,26 @@ test("loads server reading stats and migrates local reading sessions", async ({
     durationMs: 5 * 60_000,
     characterCount: 120,
   });
+  const serverLookupEvent = createLookupEventFixture({
+    id: "server-lookup",
+    bookId: "server-book",
+    occurredAtMs: nowMs - 6 * 60_000,
+    term: "猫",
+  });
+  const olderServerLookupEvent = createLookupEventFixture({
+    id: "older-server-lookup",
+    bookId: "server-book",
+    occurredAtMs: nowMs - 10 * 24 * 60 * 60_000,
+    term: "犬",
+  });
+  const localLookupEvent = createLookupEventFixture({
+    id: "local-lookup",
+    bookId: "server-book",
+    occurredAtMs: nowMs - 2 * 60_000,
+    term: "走る",
+  });
   const migratedSessions: unknown[] = [];
+  const migratedLookupEvents: unknown[] = [];
 
   await page.route("**/api/library/status", async (route) => {
     await route.fulfill({ status: 200, json: { enabled: true, bookCount: 1 } });
@@ -566,12 +585,27 @@ test("loads server reading stats and migrates local reading sessions", async ({
 
     await route.fulfill({ status: 405, json: { error: "Method not allowed." } });
   });
+  await page.route("**/api/lookup-events", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      await route.fulfill({ status: 200, json: [olderServerLookupEvent, serverLookupEvent] });
+      return;
+    }
+
+    if (request.method() === "POST") {
+      migratedLookupEvents.push(request.postDataJSON());
+      await route.fulfill({ status: 200, json: request.postDataJSON() });
+      return;
+    }
+
+    await route.fulfill({ status: 405, json: { error: "Method not allowed." } });
+  });
 
   await page.goto("/");
-  await page.evaluate(async (session) => {
+  await page.evaluate(async ({ lookupEvent, session }) => {
     localStorage.clear();
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open("migaku-rsvp", 2);
+      const request = indexedDB.open("migaku-rsvp", 3);
       request.onupgradeneeded = () => {
         const database = request.result;
         if (!database.objectStoreNames.contains("books")) {
@@ -583,12 +617,18 @@ test("loads server reading stats and migrates local reading sessions", async ({
           store.createIndex("by-book", "bookId");
           store.createIndex("by-started", "startedAt");
         }
+        if (!database.objectStoreNames.contains("lookupEvents")) {
+          const store = database.createObjectStore("lookupEvents", { keyPath: "id" });
+          store.createIndex("by-book", "bookId");
+          store.createIndex("by-occurred", "occurredAt");
+        }
       };
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         const database = request.result;
-        const transaction = database.transaction("readingSessions", "readwrite");
+        const transaction = database.transaction(["readingSessions", "lookupEvents"], "readwrite");
         transaction.objectStore("readingSessions").put(session);
+        transaction.objectStore("lookupEvents").put(lookupEvent);
         transaction.onerror = () => reject(transaction.error);
         transaction.oncomplete = () => {
           database.close();
@@ -596,7 +636,7 @@ test("loads server reading stats and migrates local reading sessions", async ({
         };
       };
     });
-  }, localSession);
+  }, { lookupEvent: localLookupEvent, session: localSession });
   await page.reload();
 
   await expect(page.locator(".stats-summary span", { hasText: "Today" }).locator("strong"))
@@ -607,6 +647,8 @@ test("loads server reading stats and migrates local reading sessions", async ({
     .toHaveText("21m");
   await expect(page.locator(".book-stats-grid span", { hasText: "Pace" }).locator("strong"))
     .toHaveText("29/min");
+  await expect(page.locator(".book-stats-grid span", { hasText: "Lookups" }).locator("strong"))
+    .toHaveText("3");
   await expect(page.locator(".book-stats-meta")).toContainText("616 characters");
   await expect(page.locator(".book-stats-meta")).toContainText("3 sessions");
   const dailyTimeChart = page.locator(".stats-section > .reading-chart");
@@ -628,7 +670,31 @@ test("loads server reading stats and migrates local reading sessions", async ({
   await latestBookProgressBar.hover();
   await expect(latestBookProgressTooltip).toHaveText("3% total, +2%");
   await expect(latestBookProgressTooltip).toBeVisible();
+  const bookSpeedChart = page.locator(".book-speed-chart");
+  await expect(bookSpeedChart.locator(".reading-chart-day")).toHaveCount(11);
+  const latestBookSpeedBar = bookSpeedChart.locator(".reading-chart-bar-track").last();
+  const latestBookSpeedTooltip = bookSpeedChart.locator(".reading-chart-tooltip").last();
+  await latestBookSpeedBar.hover();
+  await expect(latestBookSpeedTooltip).toHaveText("35/min, 17m");
+  await expect(latestBookSpeedTooltip).toBeVisible();
+  const bookLookupsChart = page.locator(".book-lookups-chart");
+  await expect(bookLookupsChart.locator(".reading-chart-day")).toHaveCount(11);
+  const latestBookLookupsBar = bookLookupsChart.locator(".reading-chart-bar-track").last();
+  const latestBookLookupsTooltip = bookLookupsChart.locator(".reading-chart-tooltip").last();
+  await latestBookLookupsBar.hover();
+  await expect(latestBookLookupsTooltip).toHaveText("2 lookups");
+  await expect(latestBookLookupsTooltip).toBeVisible();
   await expect.poll(() => migratedSessions).toContainEqual(localSession);
+  await expect.poll(() => migratedLookupEvents).toContainEqual(localLookupEvent);
+  const migratedSessionCount = migratedSessions.length;
+  await page.getByRole("button", { name: "Play" }).click();
+  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("blur"));
+  });
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
+  await page.waitForTimeout(200);
+  expect(migratedSessions).toHaveLength(migratedSessionCount);
 });
 
 test("uses prefixed API routes when the app is mounted below a path", async ({ page }) => {
@@ -666,6 +732,11 @@ test("uses prefixed API routes when the app is mounted below a path", async ({ p
       return;
     }
 
+    if (pathname === "/rsvp/api/lookup-events") {
+      await route.fulfill({ status: 200, json: [] });
+      return;
+    }
+
     await route.fulfill({ status: 404, json: { error: "Not found." } });
   });
 
@@ -677,6 +748,7 @@ test("uses prefixed API routes when the app is mounted below a path", async ({ p
   expect(requestedPaths).toContain("/api/library/status");
   expect(requestedPaths).toContain("/rsvp/api/library/status");
   expect(requestedPaths).toContain("/rsvp/api/reading-sessions");
+  expect(requestedPaths).toContain("/rsvp/api/lookup-events");
 });
 
 test("uses Migaku token boundaries when Migaku spans multiple fallback tokens", async ({
@@ -1264,6 +1336,7 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
 
   await activeRsvpToken(page).click();
   await expectClickedTerms(page, ["猫", "が", "走る"]);
+  await expect.poll(() => storedLookupTerms(page)).toEqual(["猫", "が", "走る"]);
 });
 
 test("wraps stopped hover sentence context without moving the active token", async ({
@@ -1631,6 +1704,28 @@ function createReadingSessionFixture({
   };
 }
 
+function createLookupEventFixture({
+  id,
+  bookId,
+  occurredAtMs,
+  term,
+}: {
+  id: string;
+  bookId: string;
+  occurredAtMs: number;
+  term: string;
+}): LookupEvent {
+  return {
+    id,
+    bookId,
+    occurredAt: new Date(occurredAtMs).toISOString(),
+    term,
+    status: "unknown",
+    sentenceId: "chapter:0:sentence:0",
+    position: { sentenceIndex: 0, tokenIndex: 0 },
+  };
+}
+
 async function dispatchTransportKey(page: Page, code: string, repeat: boolean) {
   await page.evaluate(
     ({ keyCode, repeated }) => {
@@ -1881,6 +1976,35 @@ async function expectClickedTerms(page: Page, terms: string[]) {
       }),
     )
     .toEqual(terms);
+}
+
+async function storedLookupTerms(page: Page) {
+  return page.evaluate(
+    () =>
+      new Promise<string[]>((resolve, reject) => {
+        const request = indexedDB.open("migaku-rsvp", 3);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("lookupEvents", "readonly");
+          const allRequest = transaction.objectStore("lookupEvents").getAll();
+          allRequest.onerror = () => reject(allRequest.error);
+          allRequest.onsuccess = () => {
+            const events = allRequest.result as Array<{ occurredAt: string; id: string; term: string }>;
+            resolve(
+              events
+                .sort(
+                  (left, right) =>
+                    left.occurredAt.localeCompare(right.occurredAt) ||
+                    left.id.localeCompare(right.id),
+                )
+                .map((event) => event.term),
+            );
+          };
+          transaction.oncomplete = () => database.close();
+        };
+      }),
+  );
 }
 
 async function expectActiveTokenCentered(page: Page) {

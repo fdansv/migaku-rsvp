@@ -1,5 +1,5 @@
 import type { DisplayStep } from "./rsvp";
-import type { ReadingSession, Sentence } from "../types";
+import type { LookupEvent, ReadingSession, Sentence } from "../types";
 
 export interface ReadingStepStats {
   wordCount: number;
@@ -12,6 +12,12 @@ export interface ReadingStatsDay {
   durationMs: number;
   wordCount: number;
   characterCount: number;
+}
+
+export interface LookupStatsDay {
+  date: string;
+  label: string;
+  lookupCount: number;
 }
 
 export interface BookReadingStats {
@@ -32,6 +38,20 @@ export interface BookProgressDay {
   cumulativePercent: number;
 }
 
+export interface BookSpeedDay {
+  date: string;
+  durationMs: number;
+  characterCount: number;
+  charactersPerMinute: number;
+}
+
+export interface BookLookupStats {
+  lookupCount: number;
+  activeDayCount: number;
+  firstLookupAt: string | null;
+  lastLookupAt: string | null;
+}
+
 export interface ReadingTimeEstimate {
   durationMs: number;
   remainingUnits: number;
@@ -42,6 +62,10 @@ export interface ReadingTimeEstimate {
 interface MutableReadingStatsDay extends ReadingStatsDay {
   wordCount: number;
   characterCount: number;
+}
+
+interface MutableLookupStatsDay extends LookupStatsDay {
+  lookupCount: number;
 }
 
 export function getReadingStepStats(
@@ -182,6 +206,126 @@ export function getBookReadingStats(
     wordsPerMinute: totalMinutes > 0 ? wordCount / totalMinutes : 0,
     charactersPerMinute: totalMinutes > 0 ? characterCount / totalMinutes : 0,
   };
+}
+
+export function getBookSpeedDays(
+  sessions: ReadingSession[],
+  bookId: string | null | undefined,
+  referenceDate = new Date(),
+  dayCount = 7,
+): BookSpeedDay[] {
+  if (!bookId) {
+    return [];
+  }
+
+  return getDailyReadingStats(
+    sessions.filter((session) => session.bookId === bookId),
+    referenceDate,
+    dayCount,
+  ).map((day) => {
+    const minutes = day.durationMs / 60_000;
+
+    return {
+      date: day.date,
+      durationMs: day.durationMs,
+      characterCount: day.characterCount,
+      charactersPerMinute: minutes > 0 ? day.characterCount / minutes : 0,
+    };
+  });
+}
+
+export function getDailyLookupStats(
+  events: LookupEvent[],
+  referenceDate = new Date(),
+  dayCount = 7,
+): LookupStatsDay[] {
+  const safeDayCount = Math.max(1, Math.round(dayCount));
+  const referenceDayStart = startOfLocalDay(referenceDate);
+  const firstDayStart = addDays(referenceDayStart, -(safeDayCount - 1));
+  const rangeStartMs = firstDayStart.getTime();
+  const rangeEndMs = addDays(referenceDayStart, 1).getTime();
+
+  const days: MutableLookupStatsDay[] = Array.from({ length: safeDayCount }, (_, index) => {
+    const date = addDays(firstDayStart, index);
+    return {
+      date: getLocalDayKey(date),
+      label: new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(date),
+      lookupCount: 0,
+    };
+  });
+  const daysByDate = new Map(days.map((day) => [day.date, day]));
+
+  for (const event of events) {
+    const occurredAtMs = Date.parse(event.occurredAt);
+    if (
+      !Number.isFinite(occurredAtMs) ||
+      occurredAtMs < rangeStartMs ||
+      occurredAtMs >= rangeEndMs
+    ) {
+      continue;
+    }
+
+    const day = daysByDate.get(getLocalDayKey(new Date(occurredAtMs)));
+    if (day) {
+      day.lookupCount += 1;
+    }
+  }
+
+  return days;
+}
+
+export function getBookLookupStats(
+  events: LookupEvent[],
+  bookId: string | null | undefined,
+): BookLookupStats | null {
+  if (!bookId) {
+    return null;
+  }
+
+  const activeDays = new Set<string>();
+  let lookupCount = 0;
+  let firstLookupMs = Number.POSITIVE_INFINITY;
+  let lastLookupMs = Number.NEGATIVE_INFINITY;
+
+  for (const event of events) {
+    if (event.bookId !== bookId) {
+      continue;
+    }
+
+    const occurredAtMs = Date.parse(event.occurredAt);
+    if (!Number.isFinite(occurredAtMs)) {
+      continue;
+    }
+
+    lookupCount += 1;
+    activeDays.add(getLocalDayKey(new Date(occurredAtMs)));
+    firstLookupMs = Math.min(firstLookupMs, occurredAtMs);
+    lastLookupMs = Math.max(lastLookupMs, occurredAtMs);
+  }
+
+  return {
+    lookupCount,
+    activeDayCount: activeDays.size,
+    firstLookupAt: Number.isFinite(firstLookupMs) ? new Date(firstLookupMs).toISOString() : null,
+    lastLookupAt: Number.isFinite(lastLookupMs) ? new Date(lastLookupMs).toISOString() : null,
+  };
+}
+
+export function getBookLookupDays(
+  events: LookupEvent[],
+  bookId: string | null | undefined,
+  referenceDate = new Date(),
+  dayCount = 7,
+): LookupStatsDay[] {
+  if (!bookId) {
+    return [];
+  }
+
+  return getDailyLookupStats(
+    events.filter((event) => event.bookId === bookId),
+    referenceDate,
+    dayCount,
+  );
 }
 
 export function getBookProgressDays(

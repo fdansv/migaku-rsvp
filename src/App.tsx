@@ -10,8 +10,11 @@ import { useFileDrop } from "./hooks/useFileDrop";
 import { useMigakuAdapter } from "./lib/migakuAdapter";
 import {
   estimateRemainingReadingTime,
+  getBookLookupDays,
+  getBookLookupStats,
   getBookProgressDays,
   getBookReadingStats,
+  getBookSpeedDays,
   getDailyReadingStats,
   getReadingStepStats,
   type ReadingStepStats,
@@ -45,12 +48,21 @@ import { loadSettings, saveSettings } from "./lib/settings";
 import {
   isServerLibraryEnabled,
   loadServerAiStatus,
+  loadServerLookupEvents,
   loadServerReadingSessions,
+  saveServerLookupEvent,
   saveServerReadingSession,
 } from "./lib/serverLibrary";
-import { loadReadingSessions, saveReadingSession } from "./lib/storage";
+import {
+  loadLookupEvents,
+  loadReadingSessions,
+  saveLookupEvent,
+  saveReadingSession,
+} from "./lib/storage";
 import type {
   Book,
+  LookupEvent,
+  MigakuTokenStatus,
   ReaderSettings,
   ReadingSession,
   ReadingSessionLocation,
@@ -138,6 +150,7 @@ export function App() {
     Record<string, SentenceTranslation>
   >({});
   const [readingSessions, setReadingSessions] = useState<ReadingSession[]>([]);
+  const [lookupEvents, setLookupEvents] = useState<LookupEvent[]>([]);
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
   const playbackTimerRef = useRef<number | null>(null);
@@ -153,6 +166,7 @@ export function App() {
   const activeReadingSessionRef = useRef<ActiveReadingSession | null>(null);
   const translationRequestsRef = useRef(new Set<string>());
   const serverReadingSessionsEnabledRef = useRef(false);
+  const serverLookupEventsEnabledRef = useRef(false);
 
   useEffect(() => {
     saveSettings(settings);
@@ -161,11 +175,13 @@ export function App() {
   useEffect(() => {
     let canceled = false;
 
-    void loadReadingSessionStore()
-      .then(({ sessions, serverEnabled }) => {
+    void loadStatsStores()
+      .then(({ sessions, lookupEvents, serverReadingSessionsEnabled, serverLookupEventsEnabled }) => {
         if (!canceled) {
-          serverReadingSessionsEnabledRef.current = serverEnabled;
+          serverReadingSessionsEnabledRef.current = serverReadingSessionsEnabled;
+          serverLookupEventsEnabledRef.current = serverLookupEventsEnabled;
           setReadingSessions(sessions);
+          setLookupEvents(lookupEvents);
         }
       })
       .catch((loadError) => {
@@ -279,6 +295,18 @@ export function App() {
     () =>
       getBookProgressDays(readingSessions, selectedBookId, new Date(), READING_STATS_DAY_COUNT),
     [readingSessions, selectedBookId],
+  );
+  const bookSpeedDays = useMemo(
+    () => getBookSpeedDays(readingSessions, selectedBookId, new Date(), READING_STATS_DAY_COUNT),
+    [readingSessions, selectedBookId],
+  );
+  const bookLookupStats = useMemo(
+    () => getBookLookupStats(lookupEvents, selectedBookId),
+    [lookupEvents, selectedBookId],
+  );
+  const bookLookupDays = useMemo(
+    () => getBookLookupDays(lookupEvents, selectedBookId, new Date(), READING_STATS_DAY_COUNT),
+    [lookupEvents, selectedBookId],
   );
   const remainingReadingTimeEstimate = useMemo(
     () =>
@@ -498,6 +526,33 @@ export function App() {
     playing,
     selectedBookId,
   ]);
+
+  useEffect(() => {
+    if (!playing) {
+      return;
+    }
+
+    function finishForLostFocus() {
+      finishReadingSession(Date.now(), { endLocation: currentReadingLocation });
+      setPlaying(false);
+    }
+
+    function onVisibilityChange() {
+      if (document.hidden) {
+        finishForLostFocus();
+      }
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", finishForLostFocus);
+    window.addEventListener("pagehide", finishForLostFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", finishForLostFocus);
+      window.removeEventListener("pagehide", finishForLostFocus);
+    };
+  }, [currentReadingLocation, playing]);
 
   useEffect(() => () => {
     finishReadingSession(Date.now(), { updateState: false });
@@ -754,6 +809,43 @@ export function App() {
     }
   }
 
+  function handleMigakuLookup({
+    term,
+    status,
+  }: {
+    term: string;
+    status?: MigakuTokenStatus;
+  }) {
+    if (!selectedBookId || !currentSentence) {
+      return;
+    }
+
+    const event: LookupEvent = {
+      id: createLookupEventId(),
+      bookId: selectedBookId,
+      occurredAt: new Date().toISOString(),
+      term,
+      status,
+      readingSessionId: activeReadingSessionRef.current?.id,
+      sentenceId: currentSentence.id,
+      position: {
+        sentenceIndex: safePosition.sentenceIndex,
+        tokenIndex: safePosition.tokenIndex,
+        characterOffset: safePosition.characterOffset,
+      },
+    };
+
+    setLookupEvents((previous) => mergeLookupEvents(previous, [event]));
+    void saveLookupEvent(event).catch((saveError) => {
+      console.error(saveError);
+    });
+    if (serverLookupEventsEnabledRef.current) {
+      void saveServerLookupEvent(event).catch((saveError) => {
+        console.error(saveError);
+      });
+    }
+  }
+
   function stopPlayback() {
     clearPlaybackTimer();
     setPlaying(false);
@@ -835,6 +927,11 @@ export function App() {
       return;
     }
 
+    const endLocation = options.endLocation ?? active.currentLocation;
+    if (!didReadingSessionAdvance(active.startLocation, endLocation)) {
+      return;
+    }
+
     const session: ReadingSession = {
       id: active.id,
       bookId: active.bookId,
@@ -844,7 +941,7 @@ export function App() {
       wordCount: active.wordCount,
       characterCount: active.characterCount,
       startLocation: active.startLocation,
-      endLocation: options.endLocation ?? active.currentLocation,
+      endLocation,
     };
 
     if (options.updateState ?? true) {
@@ -911,12 +1008,16 @@ export function App() {
           onRecap={handleRecap}
           onRecapFollowUp={handleRecapFollowUp}
           onCloseRecap={() => setRecap(createEmptyRecapState())}
+          onMigakuLookup={handleMigakuLookup}
         />
         <aside className="right-rail" aria-label="Reader tools">
           <StatsPanel
             days={readingStatsDays}
             bookStats={bookReadingStats}
+            bookLookupStats={bookLookupStats}
             bookProgressDays={bookProgressDays}
+            bookSpeedDays={bookSpeedDays}
+            bookLookupDays={bookLookupDays}
             progressPercent={selectedBookId ? progress.percent : null}
           />
           <SettingsPanel
@@ -970,12 +1071,31 @@ function createReadingSessionId() {
   return `reading:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 }
 
-async function loadReadingSessionStore() {
+function createLookupEventId() {
+  if ("randomUUID" in crypto) {
+    return `lookup:${crypto.randomUUID()}`;
+  }
+
+  return `lookup:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+async function loadStatsStores() {
   const localSessions = await loadReadingSessions();
+  const localLookupEvents = await loadLookupEvents();
 
   if (!(await isServerLibraryEnabled())) {
-    return { sessions: localSessions, serverEnabled: false };
+    return {
+      sessions: localSessions,
+      lookupEvents: localLookupEvents,
+      serverReadingSessionsEnabled: false,
+      serverLookupEventsEnabled: false,
+    };
   }
+
+  let sessions = localSessions;
+  let lookupEvents = localLookupEvents;
+  let serverReadingSessionsEnabled = false;
+  let serverLookupEventsEnabled = false;
 
   try {
     const serverSessions = await loadServerReadingSessions();
@@ -986,14 +1106,35 @@ async function loadReadingSessionStore() {
       void migrateLocalReadingSessions(localOnlySessions);
     }
 
-    return {
-      sessions: mergeReadingSessions(localSessions, serverSessions),
-      serverEnabled: true,
-    };
+    sessions = mergeReadingSessions(localSessions, serverSessions);
+    serverReadingSessionsEnabled = true;
   } catch (serverError) {
     console.error(serverError);
-    return { sessions: localSessions, serverEnabled: false };
   }
+
+  try {
+    const serverLookupEvents = await loadServerLookupEvents();
+    const serverLookupEventIds = new Set(serverLookupEvents.map((event) => event.id));
+    const localOnlyLookupEvents = localLookupEvents.filter(
+      (event) => !serverLookupEventIds.has(event.id),
+    );
+
+    if (localOnlyLookupEvents.length > 0) {
+      void migrateLocalLookupEvents(localOnlyLookupEvents);
+    }
+
+    lookupEvents = mergeLookupEvents(localLookupEvents, serverLookupEvents);
+    serverLookupEventsEnabled = true;
+  } catch (serverError) {
+    console.error(serverError);
+  }
+
+  return {
+    sessions,
+    lookupEvents,
+    serverReadingSessionsEnabled,
+    serverLookupEventsEnabled,
+  };
 }
 
 async function migrateLocalReadingSessions(sessions: ReadingSession[]) {
@@ -1012,6 +1153,22 @@ async function migrateLocalReadingSessions(sessions: ReadingSession[]) {
   }
 }
 
+async function migrateLocalLookupEvents(events: LookupEvent[]) {
+  let failedCount = 0;
+  for (const event of events) {
+    try {
+      await saveServerLookupEvent(event);
+    } catch (error) {
+      failedCount += 1;
+      console.error(error);
+    }
+  }
+
+  if (failedCount > 0) {
+    console.error(`Could not migrate ${failedCount} local lookup event(s) to server.`);
+  }
+}
+
 function mergeReadingSessions(...sessionGroups: ReadingSession[][]) {
   const sessionsById = new Map<string, ReadingSession>();
   for (const sessions of sessionGroups) {
@@ -1023,8 +1180,23 @@ function mergeReadingSessions(...sessionGroups: ReadingSession[][]) {
   return Array.from(sessionsById.values()).sort(compareReadingSessions);
 }
 
+function mergeLookupEvents(...eventGroups: LookupEvent[][]) {
+  const eventsById = new Map<string, LookupEvent>();
+  for (const events of eventGroups) {
+    for (const event of events) {
+      eventsById.set(event.id, event);
+    }
+  }
+
+  return Array.from(eventsById.values()).sort(compareLookupEvents);
+}
+
 function compareReadingSessions(left: ReadingSession, right: ReadingSession) {
   return left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id);
+}
+
+function compareLookupEvents(left: LookupEvent, right: LookupEvent) {
+  return left.occurredAt.localeCompare(right.occurredAt) || left.id.localeCompare(right.id);
 }
 
 function getReadingSessionLocation(
@@ -1040,6 +1212,13 @@ function getReadingSessionLocation(
     progressCurrent: progress.current,
     progressTotal: progress.total,
   };
+}
+
+function didReadingSessionAdvance(
+  startLocation: ReadingSessionLocation,
+  endLocation: ReadingSessionLocation,
+) {
+  return endLocation.progressCurrent > startLocation.progressCurrent;
 }
 
 function getMigakuBufferWindow(

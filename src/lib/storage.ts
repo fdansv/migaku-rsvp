@@ -1,5 +1,5 @@
 import { openDB, type DBSchema } from "idb";
-import type { Book, ReadingSession } from "../types";
+import type { Book, LookupEvent, ReadingSession } from "../types";
 
 const SELECTED_BOOK_ID_KEY = "migaku-rsvp:selected-book-id";
 
@@ -17,9 +17,17 @@ interface MigakuRsvpDatabase extends DBSchema {
       "by-started": string;
     };
   };
+  lookupEvents: {
+    key: string;
+    value: LookupEvent;
+    indexes: {
+      "by-book": string;
+      "by-occurred": string;
+    };
+  };
 }
 
-const dbPromise = openDB<MigakuRsvpDatabase>("migaku-rsvp", 2, {
+const dbPromise = openDB<MigakuRsvpDatabase>("migaku-rsvp", 3, {
   upgrade(db) {
     if (!db.objectStoreNames.contains("books")) {
       const store = db.createObjectStore("books", { keyPath: "id" });
@@ -30,6 +38,12 @@ const dbPromise = openDB<MigakuRsvpDatabase>("migaku-rsvp", 2, {
       const store = db.createObjectStore("readingSessions", { keyPath: "id" });
       store.createIndex("by-book", "bookId");
       store.createIndex("by-started", "startedAt");
+    }
+
+    if (!db.objectStoreNames.contains("lookupEvents")) {
+      const store = db.createObjectStore("lookupEvents", { keyPath: "id" });
+      store.createIndex("by-book", "bookId");
+      store.createIndex("by-occurred", "occurredAt");
     }
   },
 });
@@ -59,6 +73,17 @@ export async function loadReadingSessions() {
 export async function saveReadingSession(session: ReadingSession) {
   const db = await dbPromise;
   await db.put("readingSessions", session);
+}
+
+export async function loadLookupEvents() {
+  const db = await dbPromise;
+  const events = await db.getAll("lookupEvents");
+  return events.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+}
+
+export async function saveLookupEvent(event: LookupEvent) {
+  const db = await dbPromise;
+  await db.put("lookupEvents", event);
 }
 
 export function loadSelectedBookId() {

@@ -76,6 +76,17 @@ export interface ReadingSessionLocation {
   progressTotal: number;
 }
 
+export interface LookupEvent {
+  id: string;
+  bookId: string;
+  occurredAt: string;
+  term: string;
+  status?: MigakuTokenStatus;
+  readingSessionId?: string;
+  sentenceId?: string;
+  position?: ReaderPosition;
+}
+
 export interface ReaderSettings {
   stepsPerMinute: number;
   fontSize: number;

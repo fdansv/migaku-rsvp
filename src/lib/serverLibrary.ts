@@ -1,4 +1,4 @@
-import type { ReaderPosition, ReadingSession } from "../types";
+import type { LookupEvent, ReaderPosition, ReadingSession } from "../types";
 
 const API_BASE = "/api";
 
@@ -140,6 +140,32 @@ export async function saveServerReadingSession(session: ReadingSession) {
   });
   if (!response.ok) {
     throw new Error("Could not save server reading stats.");
+  }
+}
+
+export async function loadServerLookupEvents() {
+  const response = await fetchApi("/lookup-events", {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error("Could not load server lookup stats.");
+  }
+
+  return (await response.json()) as LookupEvent[];
+}
+
+export async function saveServerLookupEvent(event: LookupEvent) {
+  const response = await fetchApi("/lookup-events", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(event),
+  });
+  if (!response.ok) {
+    throw new Error("Could not save server lookup stats.");
   }
 }
 
