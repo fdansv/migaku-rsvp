@@ -105,6 +105,17 @@ export function SettingsPanel({
               )
             }
           />
+          {settings.stepGroupingMode === "words" ? (
+            <RangeSetting
+              label="Max chars"
+              min={1}
+              max={64}
+              step={1}
+              value={settings.maxWordStepCharacters}
+              format={(value) => String(value)}
+              onValue={(value) => onChange({ maxWordStepCharacters: value })}
+            />
+          ) : null}
           <OptionGroup
             label="Pause"
             options={STOP_MODE_OPTIONS}

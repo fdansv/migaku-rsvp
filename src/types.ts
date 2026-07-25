@@ -93,6 +93,7 @@ export interface ReaderSettings {
   stepGroupingMode: StepGroupingMode;
   chunkSize: number;
   characterChunkSize: number;
+  maxWordStepCharacters: number;
   stopMode: StopMode;
   theme: ThemeMode;
   recapApiUrl: string;

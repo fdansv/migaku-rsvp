@@ -242,7 +242,12 @@ export function App() {
   const safePosition = useMemo(() => clampPosition(position, sentences), [position, sentences]);
   const stepConfig = useMemo(
     () => getStepConfig(settings),
-    [settings.characterChunkSize, settings.chunkSize, settings.stepGroupingMode],
+    [
+      settings.characterChunkSize,
+      settings.chunkSize,
+      settings.maxWordStepCharacters,
+      settings.stepGroupingMode,
+    ],
   );
   const currentSentence = sentences[safePosition.sentenceIndex];
   const fallbackDisplayStep = useMemo(

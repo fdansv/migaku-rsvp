@@ -47,6 +47,12 @@ export function normalizeSettings(value: StoredSettings): ReaderSettings {
       24,
       DEFAULT_SETTINGS.characterChunkSize,
     ),
+    maxWordStepCharacters: clampNumber(
+      value.maxWordStepCharacters,
+      1,
+      64,
+      DEFAULT_SETTINGS.maxWordStepCharacters,
+    ),
     stopMode:
       value.stopMode && STOP_MODES.has(value.stopMode) ? value.stopMode : DEFAULT_SETTINGS.stopMode,
     theme: value.theme && THEMES.has(value.theme) ? value.theme : DEFAULT_SETTINGS.theme,

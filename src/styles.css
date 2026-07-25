@@ -13,10 +13,23 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+html {
+  min-width: 320px;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  overscroll-behavior-x: none;
 }
 
 button,
@@ -43,8 +56,27 @@ button {
     "Noto Serif CJK JP", "Noto Serif JP", "Source Han Serif JP", "Source Han Serif",
     "Noto Serif", serif;
   min-height: 100vh;
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
+}
+
+body :is(
+    [class*="migaku" i][class*="card" i],
+    [class*="mgk" i][class*="card" i],
+    [class*="migaku" i][class*="popup" i],
+    [class*="mgk" i][class*="popup" i],
+    [class*="migaku" i][class*="popover" i],
+    [class*="mgk" i][class*="popover" i]
+  ) {
+  box-sizing: border-box !important;
+  right: 4vw !important;
+  left: 4vw !important;
+  width: auto !important;
+  max-width: min(420px, 92vw) !important;
+  overflow-wrap: anywhere !important;
 }
 
 .app[data-theme="dark"] {
@@ -542,6 +574,7 @@ button {
   font-size: clamp(40px, var(--reader-font-size), 86px);
   line-height: 1.15;
   text-align: center;
+  touch-action: manipulation;
   word-break: keep-all;
   overflow-wrap: anywhere;
   transition:
@@ -593,8 +626,30 @@ button {
   min-width: 0.1em;
   position: relative;
   text-underline-offset: 0.12em;
+  touch-action: manipulation;
   transition: none !important;
   cursor: pointer;
+}
+
+.rsvp-display-token-text {
+  display: inline;
+  line-height: inherit;
+  pointer-events: none;
+}
+
+.rsvp-token-display .rsvp-display-token :is(
+    [class*="card" i],
+    [class*="popup" i],
+    [class*="popover" i],
+    [class*="tooltip" i],
+    [class*="definition" i]
+  ) {
+  position: fixed !important;
+  right: 4vw !important;
+  left: 4vw !important;
+  width: auto !important;
+  max-width: min(420px, 92vw) !important;
+  white-space: normal !important;
 }
 
 .rsvp-token-display .rsvp-display-token,

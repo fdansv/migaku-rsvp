@@ -14,6 +14,7 @@ export interface ReaderStepConfig {
   mode: StepGroupingMode;
   wordCount: number;
   characterCount: number;
+  maxWordStepCharacters: number;
 }
 
 export interface DisplayStep {
@@ -35,6 +36,21 @@ type StepConfigInput = number | Partial<ReaderStepConfig> | undefined;
 type PositionInput = number | Pick<ReaderPosition, "tokenIndex" | "characterOffset">;
 type StepStart = Pick<ReaderPosition, "tokenIndex" | "characterOffset">;
 
+interface WordSubunit {
+  startOffset: number;
+  endOffset: number;
+  tokenIndexes: number[];
+  tokenIndex: number;
+  characterOffset?: number;
+  isSplit: boolean;
+}
+
+interface WordDisplayStep extends DisplayStep {
+  start: StepStart;
+  subunitStartIndex: number;
+  subunitEndIndex: number;
+}
+
 interface ProgressCounts {
   counts: number[];
   prefixTotals: number[];
@@ -50,6 +66,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   stepGroupingMode: "words",
   chunkSize: 1,
   characterChunkSize: 4,
+  maxWordStepCharacters: 4,
   stopMode: "unknown",
   theme: "paper",
   recapApiUrl: "",
@@ -67,6 +84,7 @@ export function getStepConfig(settings: ReaderSettings): ReaderStepConfig {
     mode: settings.stepGroupingMode,
     wordCount: settings.chunkSize,
     characterCount: settings.characterChunkSize,
+    maxWordStepCharacters: settings.maxWordStepCharacters,
   });
 }
 
@@ -115,10 +133,7 @@ export function getPositionForTextMatch(
       };
     }
 
-    return {
-      sentenceIndex,
-      tokenIndex,
-    };
+    return getWordPositionForOffset(sentence, sentenceIndex, matchOffset, config);
   }
 
   return null;
@@ -236,9 +251,10 @@ export function getProgressStats(
   const currentSentenceProgress =
     config.mode === "characters"
       ? getCharacterCountThroughOffset(sentence, display.endOffset)
-      : getProgressThroughToken(
+      : getWordProgressThroughOffset(
           sentence,
-          display.tokenIndexes.at(-1) ?? current.tokenIndex,
+          display.endOffset,
+          config,
           tokenGroups,
         );
   const currentToken = Math.min(completedBeforeCurrentSentence + currentSentenceProgress, total);
@@ -446,16 +462,23 @@ function getWordDisplayStep(
   config: ReaderStepConfig,
   tokenGroups: TokenGroups = [],
 ): DisplayStep {
-  const span = getWordStepSpan(sentence, getPositionTokenIndex(position), config.wordCount, tokenGroups);
-  const tokens = sentence.tokens.slice(span.start, span.end + 1);
-  const startOffset = tokens[0]?.start ?? 0;
-  const endOffset = tokens.at(-1)?.end ?? sentence.text.length;
+  const subunits = getWordSubunits(sentence, config, tokenGroups);
+  if (subunits.length === 0) {
+    return { startOffset: 0, endOffset: 0, tokenIndexes: [], text: "" };
+  }
 
+  const startIndex = getWordSubunitIndexForPosition(subunits, sentence, position);
+  const step = createWordDisplayStep(
+    sentence,
+    subunits,
+    startIndex,
+    getWordDisplayEndIndex(subunits, startIndex, config.wordCount),
+  );
   return {
-    startOffset,
-    endOffset,
-    tokenIndexes: tokens.map((token) => token.index),
-    text: tokens.map((token) => token.text).join(""),
+    startOffset: step.startOffset,
+    endOffset: step.endOffset,
+    tokenIndexes: step.tokenIndexes,
+    text: step.text,
   };
 }
 
@@ -484,53 +507,101 @@ function getCharacterDisplayStep(
   };
 }
 
-function getWordStepSpan(
+function getWordDisplaySteps(
   sentence: Sentence,
-  tokenIndex: number,
-  chunkSize: number,
+  config: ReaderStepConfig,
   tokenGroups: TokenGroups = [],
-) {
-  const units = getStepUnits(sentence, tokenGroups);
-  if (sentence.tokens.length === 0) {
-    return { start: 0, end: 0 };
-  }
-  if (units.length === 0) {
-    return { start: 0, end: sentence.tokens.length - 1 };
-  }
+): WordDisplayStep[] {
+  const subunits = getWordSubunits(sentence, config, tokenGroups);
+  const steps: WordDisplayStep[] = [];
+  const wordCount = Math.max(1, config.wordCount);
 
-  const startWordIndex = normalizeStepStart(sentence, tokenIndex, tokenGroups);
-  const foundStartOffset = units.findIndex(
-    (unit) => unit.includes(startWordIndex) || unit[0] >= startWordIndex,
-  );
-  const startWordOffset = foundStartOffset >= 0 ? foundStartOffset : units.length - 1;
-  const endWordOffset = Math.min(startWordOffset + Math.max(1, chunkSize) - 1, units.length - 1);
-  const endWordIndex = units[endWordOffset].at(-1) ?? units[endWordOffset][0];
-  let start = startWordIndex;
-  let end = endWordIndex;
+  for (let index = 0; index < subunits.length;) {
+    const endIndex = getWordDisplayEndIndex(subunits, index, wordCount);
 
-  if (!sentence.tokens.some((token) => token.index < startWordIndex && token.isWordLike)) {
-    start = 0;
+    steps.push(createWordDisplayStep(sentence, subunits, index, endIndex));
+    index = endIndex + 1;
   }
 
-  while (end + 1 < sentence.tokens.length && !sentence.tokens[end + 1].isWordLike) {
-    end += 1;
-  }
-
-  return { start, end };
+  return steps;
 }
 
-function getWordStepStarts(sentence: Sentence, chunkSize: number, tokenGroups: TokenGroups = []) {
-  const units = getStepUnits(sentence, tokenGroups);
-  if (units.length === 0) {
-    return sentence.tokens.length > 0 ? [0] : [];
+function getWordDisplayEndIndex(
+  subunits: WordSubunit[],
+  startIndex: number,
+  wordCount: number,
+) {
+  let endIndex = startIndex;
+
+  if (!subunits[startIndex].isSplit) {
+    let remainingWords = Math.max(1, wordCount) - 1;
+    while (
+      remainingWords > 0 &&
+      endIndex + 1 < subunits.length &&
+      !subunits[endIndex + 1].isSplit
+    ) {
+      endIndex += 1;
+      remainingWords -= 1;
+    }
   }
 
-  const step = Math.max(1, chunkSize);
-  const starts: number[] = [];
-  for (let index = 0; index < units.length; index += step) {
-    starts.push(units[index][0]);
+  return endIndex;
+}
+
+function createWordDisplayStep(
+  sentence: Sentence,
+  subunits: WordSubunit[],
+  subunitStartIndex: number,
+  subunitEndIndex: number,
+): WordDisplayStep {
+  const first = subunits[subunitStartIndex];
+  const last = subunits[subunitEndIndex];
+  const endOffset = getWordStepEndOffset(sentence, last);
+  const tokenIndexes = getTokensInRange(sentence, first.startOffset, endOffset).map(
+    (token) => token.index,
+  );
+
+  return {
+    startOffset: first.startOffset,
+    endOffset,
+    tokenIndexes,
+    text: sentence.text.slice(first.startOffset, endOffset),
+    start: createWordStepStart(first),
+    subunitStartIndex,
+    subunitEndIndex,
+  };
+}
+
+function getWordStepEndOffset(sentence: Sentence, subunit: WordSubunit) {
+  let endOffset = subunit.endOffset;
+  const lastTokenIndex = subunit.tokenIndexes.at(-1);
+  const tokenArrayIndex = sentence.tokens.findIndex((token) => token.index === lastTokenIndex);
+  const lastToken = tokenArrayIndex >= 0 ? sentence.tokens[tokenArrayIndex] : undefined;
+
+  if (!lastToken || endOffset < lastToken.end) {
+    return endOffset;
   }
-  return starts;
+
+  for (let index = tokenArrayIndex + 1; index < sentence.tokens.length; index += 1) {
+    const token = sentence.tokens[index];
+    if (token.isWordLike) {
+      break;
+    }
+    endOffset = token.end;
+  }
+
+  return endOffset;
+}
+
+function createWordStepStart(subunit: WordSubunit): StepStart {
+  if (typeof subunit.characterOffset === "number") {
+    return {
+      tokenIndex: subunit.tokenIndex,
+      characterOffset: subunit.characterOffset,
+    };
+  }
+
+  return { tokenIndex: subunit.tokenIndex };
 }
 
 function getStepStarts(
@@ -542,9 +613,7 @@ function getStepStarts(
     return getCharacterStepStarts(sentence, config.characterCount);
   }
 
-  return getWordStepStarts(sentence, config.wordCount, tokenGroups).map((tokenIndex) => ({
-    tokenIndex,
-  }));
+  return getWordDisplaySteps(sentence, config, tokenGroups).map((step) => step.start);
 }
 
 function moveByStep(
@@ -678,71 +747,181 @@ function getCurrentStepPosition(
 
   return {
     sentenceIndex: current.sentenceIndex,
-    tokenIndex: getWordStepStartForTokenIndex(
+    ...getWordStepStartForPosition(
       sentence,
-      current.tokenIndex,
-      config.wordCount,
+      current,
+      config,
       tokenGroups,
     ),
   };
 }
 
-function getWordStepStartForTokenIndex(
+function getWordStepStartForPosition(
   sentence: Sentence,
-  tokenIndex: number,
-  chunkSize: number,
+  position: PositionInput,
+  config: ReaderStepConfig,
   tokenGroups: TokenGroups = [],
 ) {
-  const starts = getWordStepStarts(sentence, chunkSize, tokenGroups);
-  if (starts.length === 0) {
-    return 0;
+  const steps = getWordDisplaySteps(sentence, config, tokenGroups);
+  return steps[getWordDisplayStepIndex(steps, sentence, position)]?.start ?? { tokenIndex: 0 };
+}
+
+function getWordPositionForOffset(
+  sentence: Sentence,
+  sentenceIndex: number,
+  offset: number,
+  config: ReaderStepConfig,
+): ReaderPosition {
+  const subunits = getWordSubunits(sentence, config);
+  if (subunits.length === 0) {
+    return { sentenceIndex, tokenIndex: getTokenIndexAtOffset(sentence, offset) };
   }
 
-  const normalizedStart = normalizeStepStart(sentence, tokenIndex, tokenGroups);
-  let stepStart = starts[0];
-  for (const start of starts) {
-    if (start > normalizedStart) {
-      break;
-    }
-    stepStart = start;
-  }
-
-  return stepStart;
+  const subunitIndex = getWordSubunitIndexForPosition(
+    subunits,
+    sentence,
+    {
+      tokenIndex: getTokenIndexAtOffset(sentence, offset),
+      characterOffset: offset,
+    },
+  );
+  return createStepPosition(sentenceIndex, createWordStepStart(subunits[subunitIndex]));
 }
 
 function getFirstStepStart(sentence: Sentence, tokenGroups: TokenGroups = []) {
-  return getWordStepStarts(sentence, 1, tokenGroups)[0] ?? 0;
+  const units = getStepUnits(sentence, tokenGroups);
+  return units[0]?.[0] ?? 0;
 }
 
-function normalizeStepStart(sentence: Sentence, tokenIndex: number, tokenGroups: TokenGroups = []) {
-  const clampedTokenIndex = Math.min(
-    Math.max(tokenIndex, 0),
-    Math.max(sentence.tokens.length - 1, 0),
-  );
-  const currentToken = sentence.tokens[clampedTokenIndex];
-  if (!currentToken) {
-    return 0;
+function getWordDisplayStepIndex(
+  steps: WordDisplayStep[],
+  sentence: Sentence,
+  position: PositionInput,
+) {
+  const positionOffset = getPositionWordOffset(sentence, position);
+  let stepIndex = 0;
+
+  for (let index = 0; index < steps.length; index += 1) {
+    if (steps[index].startOffset > positionOffset) {
+      break;
+    }
+    stepIndex = index;
   }
+
+  return stepIndex;
+}
+
+function getWordSubunitIndexForPosition(
+  subunits: WordSubunit[],
+  sentence: Sentence,
+  position: PositionInput,
+) {
+  const positionOffset = getPositionWordOffset(sentence, position);
+  let subunitIndex = 0;
+
+  for (let index = 0; index < subunits.length; index += 1) {
+    if (subunits[index].startOffset > positionOffset) {
+      break;
+    }
+    subunitIndex = index;
+  }
+
+  return subunitIndex;
+}
+
+function getWordSubunits(
+  sentence: Sentence,
+  config: ReaderStepConfig,
+  tokenGroups: TokenGroups = [],
+): WordSubunit[] {
+  if (sentence.tokens.length === 0) {
+    return [];
+  }
+
   const units = getStepUnits(sentence, tokenGroups);
   if (units.length === 0) {
-    return 0;
-  }
-  if (currentToken.isWordLike) {
-    return getUnitStartForTokenIndex(units, currentToken.index) ?? currentToken.index;
-  }
-
-  const previousWord = [...sentence.tokens]
-    .slice(0, clampedTokenIndex + 1)
-    .reverse()
-    .find((token) => token.isWordLike);
-  if (previousWord) {
-    return getUnitStartForTokenIndex(units, previousWord.index) ?? previousWord.index;
+    return [
+      {
+        startOffset: sentence.tokens[0]?.start ?? 0,
+        endOffset: sentence.tokens.at(-1)?.end ?? sentence.text.length,
+        tokenIndexes: sentence.tokens.map((token) => token.index),
+        tokenIndex: sentence.tokens[0]?.index ?? 0,
+        isSplit: false,
+      },
+    ];
   }
 
-  const nextWord = sentence.tokens.slice(clampedTokenIndex + 1).find((token) => token.isWordLike);
-  return nextWord
-    ? getUnitStartForTokenIndex(units, nextWord.index) ?? nextWord.index
-    : currentToken.index;
+  return units.flatMap((unit) => {
+    const unitTokens = sentence.tokens
+      .filter((token) => unit.includes(token.index))
+      .sort((left, right) => left.start - right.start);
+    const firstToken = unitTokens[0];
+    const lastToken = unitTokens.at(-1);
+    if (!firstToken || !lastToken) {
+      return [];
+    }
+
+    const splitOffsets = getBalancedWordSplitOffsets(
+      sentence.text,
+      firstToken.start,
+      lastToken.end,
+      config.maxWordStepCharacters,
+    );
+    const isSplit = splitOffsets.length > 2;
+
+    return splitOffsets.slice(0, -1).map((startOffset, index) => {
+      const endOffset = splitOffsets[index + 1] ?? lastToken.end;
+      const tokens = getTokensInRange(sentence, startOffset, endOffset).filter((token) =>
+        unit.includes(token.index),
+      );
+      const firstPartToken = tokens[0] ?? getTokenAtOffset(sentence, startOffset) ?? firstToken;
+      const subunit: WordSubunit = {
+        startOffset,
+        endOffset,
+        tokenIndexes: tokens.length > 0 ? tokens.map((token) => token.index) : [firstPartToken.index],
+        tokenIndex: firstPartToken.index,
+        isSplit,
+      };
+
+      if (isSplit && startOffset > firstPartToken.start) {
+        subunit.characterOffset = startOffset;
+      }
+
+      return subunit;
+    });
+  });
+}
+
+function getBalancedWordSplitOffsets(
+  text: string,
+  startOffset: number,
+  endOffset: number,
+  maxCharacters: number,
+) {
+  const relativeOffsets = getCharacterOffsets(text.slice(startOffset, endOffset));
+  const characterCount = Math.max(relativeOffsets.length - 1, 0);
+  const safeMaxCharacters = Math.max(1, Math.round(maxCharacters));
+
+  if (characterCount <= safeMaxCharacters) {
+    return [startOffset, endOffset];
+  }
+
+  const partCount = Math.min(
+    characterCount,
+    Math.max(2, Math.round(characterCount / safeMaxCharacters)),
+  );
+  const basePartSize = Math.floor(characterCount / partCount);
+  const largerPartCount = characterCount % partCount;
+  const shorterPartCount = partCount - largerPartCount;
+  const offsets = [startOffset];
+  let characterIndex = 0;
+
+  for (let partIndex = 0; partIndex < partCount; partIndex += 1) {
+    characterIndex += basePartSize + (partIndex >= shorterPartCount ? 1 : 0);
+    offsets.push(startOffset + (relativeOffsets[characterIndex] ?? endOffset - startOffset));
+  }
+
+  return offsets;
 }
 
 function getStepUnits(sentence: Sentence, tokenGroups: TokenGroups = []) {
@@ -753,10 +932,6 @@ function getStepUnits(sentence: Sentence, tokenGroups: TokenGroups = []) {
     .map((token) => [token.index]);
 
   return [...normalizedGroups, ...singleTokenUnits].sort((left, right) => left[0] - right[0]);
-}
-
-function getWordLikeTokenIndexes(sentence: Sentence) {
-  return sentence.tokens.filter((token) => token.isWordLike).map((token) => token.index);
 }
 
 function getNormalizedTokenGroups(sentence: Sentence, tokenGroups: TokenGroups = []) {
@@ -784,10 +959,6 @@ function getNormalizedTokenGroups(sentence: Sentence, tokenGroups: TokenGroups =
   }
 
   return normalizedGroups.sort((left, right) => left[0] - right[0]);
-}
-
-function getUnitStartForTokenIndex(units: TokenGroups, tokenIndex: number) {
-  return units.find((unit) => unit.includes(tokenIndex))?.[0];
 }
 
 function getUnknownWordUnitKeys(
@@ -887,7 +1058,7 @@ function getGroupedProgressDeltas(
 }
 
 function getProgressCountsKey(config: ReaderStepConfig) {
-  return `${config.mode}:${config.wordCount}:${config.characterCount}`;
+  return `${config.mode}:${config.wordCount}:${config.characterCount}:${config.maxWordStepCharacters}`;
 }
 
 function getTokenGroupsForSentence(
@@ -906,29 +1077,18 @@ function getProgressUnitCount(
     return getCharacterCount(sentence);
   }
 
-  const unitCount = getStepUnits(sentence, tokenGroups).length;
-  return unitCount > 0 ? unitCount : sentence.tokens.length;
+  return getWordSubunits(sentence, config, tokenGroups).length;
 }
 
-function getProgressThroughToken(sentence: Sentence, tokenIndex: number, tokenGroups: TokenGroups = []) {
-  const units = getStepUnits(sentence, tokenGroups);
-  if (units.length > 0) {
-    return units.filter((unit) => unit[0] <= tokenIndex).length;
-  }
-
-  return Math.min(tokenIndex + 1, sentence.tokens.length);
-}
-
-function getTokenIndexForProgressUnit(sentence: Sentence, location: number, chunkSize: number) {
-  const wordIndexes = getWordLikeTokenIndexes(sentence);
-  if (wordIndexes.length > 0) {
-    const targetOffset = Math.min(Math.max(location - 1, 0), wordIndexes.length - 1);
-    const chunkStartOffset = Math.floor(targetOffset / chunkSize) * chunkSize;
-    return wordIndexes[chunkStartOffset];
-  }
-
-  const tokenOffset = Math.min(Math.max(location - 1, 0), Math.max(sentence.tokens.length - 1, 0));
-  return sentence.tokens[tokenOffset]?.index ?? 0;
+function getWordProgressThroughOffset(
+  sentence: Sentence,
+  offset: number,
+  config: ReaderStepConfig,
+  tokenGroups: TokenGroups = [],
+) {
+  const subunits = getWordSubunits(sentence, config, tokenGroups);
+  const safeOffset = Math.min(Math.max(offset, 0), sentence.text.length);
+  return subunits.filter((subunit) => subunit.endOffset <= safeOffset).length;
 }
 
 function getPositionForSentenceProgressUnit(
@@ -954,10 +1114,23 @@ function getPositionForSentenceProgressUnit(
     };
   }
 
-  return {
-    sentenceIndex,
-    tokenIndex: getTokenIndexForProgressUnit(sentence, location, config.wordCount),
-  };
+  const steps = getWordDisplaySteps(sentence, config);
+  if (steps.length === 0) {
+    return { sentenceIndex, tokenIndex: 0 };
+  }
+
+  const targetSubunitIndex = Math.min(
+    Math.max(location - 1, 0),
+    steps.at(-1)?.subunitEndIndex ?? 0,
+  );
+  const step =
+    steps.find(
+      (candidate) =>
+        candidate.subunitStartIndex <= targetSubunitIndex &&
+        targetSubunitIndex <= candidate.subunitEndIndex,
+    ) ?? steps.at(-1);
+
+  return createStepPosition(sentenceIndex, step?.start ?? { tokenIndex: 0 });
 }
 
 function normalizeStepConfig(stepConfig: StepConfigInput): ReaderStepConfig {
@@ -966,6 +1139,7 @@ function normalizeStepConfig(stepConfig: StepConfigInput): ReaderStepConfig {
       mode: "words",
       wordCount: clampPositiveInteger(stepConfig, DEFAULT_SETTINGS.chunkSize),
       characterCount: DEFAULT_SETTINGS.characterChunkSize,
+      maxWordStepCharacters: DEFAULT_SETTINGS.maxWordStepCharacters,
     };
   }
 
@@ -976,6 +1150,10 @@ function normalizeStepConfig(stepConfig: StepConfigInput): ReaderStepConfig {
     characterCount: clampPositiveInteger(
       stepConfig?.characterCount,
       DEFAULT_SETTINGS.characterChunkSize,
+    ),
+    maxWordStepCharacters: clampPositiveInteger(
+      stepConfig?.maxWordStepCharacters,
+      DEFAULT_SETTINGS.maxWordStepCharacters,
     ),
   };
 }
@@ -1003,6 +1181,10 @@ function getPositionCharacterOffset(sentence: Sentence, position: PositionInput)
   const tokenIndex = getPositionTokenIndex(position);
   const token = sentence.tokens[Math.min(Math.max(tokenIndex, 0), sentence.tokens.length - 1)];
   return token?.start ?? 0;
+}
+
+function getPositionWordOffset(sentence: Sentence, position: PositionInput) {
+  return getPositionCharacterOffset(sentence, position);
 }
 
 function getCharacterStepStarts(
@@ -1087,11 +1269,15 @@ function getCharacterIndexAtOffset(offsets: number[], offset: number) {
 }
 
 function getTokenIndexAtOffset(sentence: Sentence, offset: number) {
+  return getTokenAtOffset(sentence, offset)?.index ?? 0;
+}
+
+function getTokenAtOffset(sentence: Sentence, offset: number) {
   const token =
     sentence.tokens.find((candidate) => candidate.start <= offset && offset < candidate.end) ??
     sentence.tokens.find((candidate) => candidate.start >= offset) ??
     sentence.tokens.at(-1);
-  return token?.index ?? 0;
+  return token;
 }
 
 function getTokensInRange(sentence: Sentence, startOffset: number, endOffset: number) {
@@ -1114,7 +1300,7 @@ function getStepComparableOffset(
   if (config.mode === "characters") {
     return getPositionCharacterOffset(sentence, position);
   }
-  return getPositionTokenIndex(position);
+  return getPositionWordOffset(sentence, position);
 }
 
 function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {

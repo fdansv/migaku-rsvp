@@ -201,22 +201,31 @@ export function ReaderPane({
         return;
       }
 
+      track.style.setProperty("--rsvp-track-offset", "0px");
+      track.style.setProperty("--rsvp-track-scale", "1");
+
+      const tokenElements = Array.from(
+        scaleElement.querySelectorAll<HTMLElement>(".rsvp-display-token"),
+      );
+      const tokenRects = tokenElements.map(getTokenTextRect).filter(isUsableRect);
       const activeElements = Array.from(
         scaleElement.querySelectorAll<HTMLElement>('[data-rsvp-visible-token="true"]'),
       );
+      const activeRects = activeElements.map(getTokenTextRect).filter(isUsableRect);
 
-      if (activeElements.length === 0) {
+      if (activeRects.length === 0 || tokenRects.length === 0) {
         track.style.setProperty("--rsvp-track-offset", "0px");
         track.style.setProperty("--rsvp-track-scale", "1");
         return;
       }
 
-      const activeLeft = Math.min(...activeElements.map((element) => element.offsetLeft));
-      const activeRight = Math.max(
-        ...activeElements.map((element) => element.offsetLeft + element.offsetWidth),
-      );
+      const scaleRect = scaleElement.getBoundingClientRect();
+      const trackLeft = Math.min(...tokenRects.map((rect) => rect.left - scaleRect.left));
+      const trackRight = Math.max(...tokenRects.map((rect) => rect.right - scaleRect.left));
+      const activeLeft = Math.min(...activeRects.map((rect) => rect.left - scaleRect.left));
+      const activeRight = Math.max(...activeRects.map((rect) => rect.right - scaleRect.left));
       const activeCenter = activeLeft + (activeRight - activeLeft) / 2;
-      const trackCenter = scaleElement.scrollWidth / 2;
+      const trackCenter = trackLeft + (trackRight - trackLeft) / 2;
       const activeWidth = activeRight - activeLeft;
       const availableWidth = displayElement.clientWidth * 0.96;
       const scale = activeWidth > 0 ? Math.min(1, availableWidth / activeWidth) : 1;
@@ -590,7 +599,7 @@ export function ReaderPane({
 
                     return (
                       <span
-                        key={segment.key}
+                        key={`${currentSentence.id}:${segment.key}`}
                         className={[
                           "rsvp-display-token",
                           isDisplayToken
@@ -611,7 +620,7 @@ export function ReaderPane({
                         {...mirrorAttributes}
                         data-mgk-sentence={currentSentence.text}
                       >
-                        {segment.text}
+                        <span className="rsvp-display-token-text">{segment.text}</span>
                       </span>
                     );
                   })}
@@ -718,6 +727,51 @@ export function ReaderPane({
     onRecapFollowUp(question);
     setRecapFollowUpInput("");
   }
+}
+
+function getTokenTextRect(element: HTMLElement) {
+  const textElement = element.querySelector<HTMLElement>(":scope > .rsvp-display-token-text");
+  if (textElement) {
+    return textElement.getBoundingClientRect();
+  }
+
+  const directTextRect = getDirectTextRect(element);
+  if (directTextRect) {
+    return directTextRect;
+  }
+
+  const surface = Array.from(element.querySelectorAll<HTMLElement>(".migaku-surface")).find(
+    (candidate) => candidate.closest(".rsvp-display-token") === element,
+  );
+  return (surface ?? element).getBoundingClientRect();
+}
+
+function getDirectTextRect(element: HTMLElement) {
+  const textNodes = Array.from(element.childNodes).filter(
+    (node): node is Text =>
+      node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim()),
+  );
+  const firstTextNode = textNodes[0];
+  const lastTextNode = textNodes.at(-1);
+  if (!firstTextNode || !lastTextNode) {
+    return null;
+  }
+
+  const range = document.createRange();
+  range.setStartBefore(firstTextNode);
+  range.setEndAfter(lastTextNode);
+  const rect = range.getBoundingClientRect();
+  range.detach();
+  return rect;
+}
+
+function isUsableRect(rect: DOMRect) {
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    Number.isFinite(rect.left) &&
+    Number.isFinite(rect.right)
+  );
 }
 
 function parseProgressLocation(input: string, total: number) {

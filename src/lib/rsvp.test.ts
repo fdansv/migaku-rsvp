@@ -22,6 +22,41 @@ import {
 
 const sentence = createSentence("猫が走る。", "chapter:0", 0, 0, 0) as Sentence;
 const nextSentence = createSentence("犬も走る。", "chapter:0", 0, 1, 1) as Sentence;
+const longWordSentence: Sentence = {
+  id: "chapter:0:sentence:long",
+  chapterId: "chapter:0",
+  chapterIndex: 0,
+  index: 2,
+  globalIndex: 2,
+  text: "abcdefghi。",
+  tokens: [
+    {
+      id: "chapter:0:sentence:long:token:0",
+      index: 0,
+      text: "abcdefghi",
+      start: 0,
+      end: 9,
+      isWordLike: true,
+      isPunctuation: false,
+    },
+    {
+      id: "chapter:0:sentence:long:token:1",
+      index: 1,
+      text: "。",
+      start: 9,
+      end: 10,
+      isWordLike: false,
+      isPunctuation: true,
+    },
+  ],
+};
+
+const splitWordConfig = {
+  mode: "words" as const,
+  wordCount: 1,
+  characterCount: 4,
+  maxWordStepCharacters: 4,
+};
 
 describe("RSVP reader logic", () => {
   it("flattens chapters without changing sentence order", () => {
@@ -150,6 +185,16 @@ describe("RSVP reader logic", () => {
     expect(getDisplayText(sentence, sentence.tokens.length - 1, 4)).toBe("走る。");
   });
 
+  it("splits long word-mode tokens into balanced chunks", () => {
+    const start = { sentenceIndex: 0, tokenIndex: 0 };
+    const secondChunk = advancePosition(start, [longWordSentence], splitWordConfig);
+
+    expect(getDisplayText(longWordSentence, start, splitWordConfig)).toBe("abcd");
+    expect(secondChunk).toEqual({ sentenceIndex: 0, tokenIndex: 0, characterOffset: 4 });
+    expect(getDisplayText(longWordSentence, secondChunk, splitWordConfig)).toBe("efghi。");
+    expect(retreatPosition(secondChunk, [longWordSentence], splitWordConfig)).toEqual(start);
+  });
+
   it("groups display text by character count and can split inside a token", () => {
     const characterConfig = { mode: "characters" as const, wordCount: 1, characterCount: 3 };
     const runIndex = sentence.tokens.find((token) => token.text.includes("走る"))?.index ?? 0;
@@ -268,6 +313,30 @@ describe("RSVP reader logic", () => {
     expect(getPositionForProgressUnit(3, [sentence], 2)).toEqual({
       sentenceIndex: 0,
       tokenIndex: runIndex,
+    });
+  });
+
+  it("maps split word-mode chunks into progress units", () => {
+    const secondChunk = { sentenceIndex: 0, tokenIndex: 0, characterOffset: 4 };
+
+    expect(getProgressStats({ sentenceIndex: 0, tokenIndex: 0 }, [longWordSentence], splitWordConfig)).toEqual({
+      current: 1,
+      total: 2,
+      percent: 50,
+    });
+    expect(getProgressStats(secondChunk, [longWordSentence], splitWordConfig)).toEqual({
+      current: 2,
+      total: 2,
+      percent: 100,
+    });
+    expect(getPositionForProgressUnit(2, [longWordSentence], splitWordConfig)).toEqual(secondChunk);
+  });
+
+  it("jumps literal search matches to the containing split word-mode chunk", () => {
+    expect(getPositionForTextMatch("ef", [longWordSentence], splitWordConfig)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: 0,
+      characterOffset: 4,
     });
   });
 

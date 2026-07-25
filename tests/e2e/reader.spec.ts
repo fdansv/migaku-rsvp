@@ -133,12 +133,23 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
   );
+  await expect(page.locator("label", { hasText: "Max chars" }).locator(".setting-value")).toHaveText(
+    "4",
+  );
+  await setRangeValue(page.locator("label", { hasText: "Max chars" }).locator("input"), "5");
+  await expect(page.locator("label", { hasText: "Max chars" }).locator(".setting-value")).toHaveText(
+    "5",
+  );
   const groupBy = page.locator("fieldset", { hasText: "Group by" });
   await expect(groupBy.getByRole("button")).toHaveText(["Words", "Characters"]);
   await groupBy.getByRole("button", { name: "Characters" }).click();
+  await expect(page.locator("label", { hasText: "Max chars" })).toHaveCount(0);
   await setRangeValue(page.locator("label", { hasText: "Characters" }).locator("input"), "3");
   await expectRsvpDisplayText(page, "猫が走");
   await groupBy.getByRole("button", { name: "Words" }).click();
+  await expect(page.locator("label", { hasText: "Max chars" }).locator(".setting-value")).toHaveText(
+    "5",
+  );
   await expectRsvpDisplayText(page, "猫が走る。");
   await page.getByRole("button", { name: "Never" }).click();
   await expect(page.getByRole("button", { name: "Never" })).toHaveAttribute("aria-pressed", "true");
@@ -162,6 +173,9 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   );
   await expect(page.locator("label", { hasText: "Words" }).locator(".setting-value")).toHaveText(
     "3",
+  );
+  await expect(page.locator("label", { hasText: "Max chars" }).locator(".setting-value")).toHaveText(
+    "5",
   );
   await setRangeValue(page.locator("label", { hasText: "Steps/min" }).locator("input"), "150");
   await setRangeValue(page.locator("label", { hasText: "Words" }).locator("input"), "1");
@@ -1484,6 +1498,85 @@ test("keeps active Migaku targets clickable after navigation and auto-stop", asy
   await expect.poll(() => storedLookupTerms(page)).toEqual(["猫", "が", "走る"]);
 });
 
+test("keeps Migaku lookup cards from shrinking the mobile reader after word taps", async ({
+  page,
+}, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "mobile-lookup-card.epub");
+  await createSmallEpub(epubPath);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await page.locator(".migaku-buffer-surface [data-rsvp-sentence-id]").first().evaluate((surface) => {
+    surface.innerHTML = `
+      <span class="migaku-token unknown" data-mgk-term="猫" data-mgk-known-status="UNKNOWN" data-mgk-sentence="猫">
+        <span class="migaku-surface">猫</span>
+      </span>
+      <span class="migaku-token known" data-mgk-term="が" data-mgk-known-status="KNOWN" data-mgk-sentence="が">
+        <span class="migaku-surface">が</span>
+      </span>
+      <span class="migaku-token known" data-mgk-term="走る" data-mgk-known-status="KNOWN" data-mgk-sentence="走る">
+        <span class="migaku-surface">走る</span>
+      </span>
+      <span>。</span>
+    `;
+  });
+
+  await expect(page.locator(".migaku-pill")).toContainText("parsed");
+  await activeRsvpToken(page).click();
+  const widthBeforeLookupCard = await page.evaluate(() => document.documentElement.scrollWidth);
+  await activeRsvpToken(page).evaluate((element) => {
+    const card = document.createElement("div");
+    card.className = "migaku-wordcard";
+    card.style.width = "1200px";
+    card.style.height = "44px";
+    card.textContent = "Injected Migaku lookup card";
+    element.append(card);
+  });
+  await page.evaluate(() => {
+    const card = document.createElement("div");
+    card.className = "migaku-popup-card";
+    card.style.position = "absolute";
+    card.style.width = "1200px";
+    card.style.height = "44px";
+    card.textContent = "Body-level Migaku popup card";
+    document.body.append(card);
+  });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-sentence-track").evaluate((track) =>
+        Number(getComputedStyle(track).getPropertyValue("--rsvp-track-scale")),
+      ),
+    )
+    .toBeGreaterThan(0.95);
+  await expectVisibleRsvpTokensInsideDisplay(page);
+  await expectActiveTokenCentered(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (widthBefore) => document.documentElement.scrollWidth <= widthBefore + 1,
+        widthBeforeLookupCard,
+      ),
+    )
+    .toBe(true);
+});
+
 test("wraps stopped hover sentence context without moving the active token", async ({
   page,
 }, testInfo) => {
@@ -1524,7 +1617,10 @@ test("scales long active text to stay inside the mobile viewport", async ({ page
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
-    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ fontSize: 96, chunkSize: 1 }));
+    localStorage.setItem(
+      "migaku-rsvp:settings",
+      JSON.stringify({ fontSize: 96, chunkSize: 1, maxWordStepCharacters: 64 }),
+    );
     await indexedDB.deleteDatabase("migaku-rsvp");
   });
   await page.reload();
@@ -1586,7 +1682,10 @@ test("centers scaled long active groups away from the sentence middle", async ({
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
-    localStorage.setItem("migaku-rsvp:settings", JSON.stringify({ fontSize: 96, chunkSize: 1 }));
+    localStorage.setItem(
+      "migaku-rsvp:settings",
+      JSON.stringify({ fontSize: 96, chunkSize: 1, maxWordStepCharacters: 64 }),
+    );
     await indexedDB.deleteDatabase("migaku-rsvp");
   });
   await page.reload();
