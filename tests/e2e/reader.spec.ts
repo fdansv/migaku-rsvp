@@ -89,6 +89,32 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveText("猫");
   await expectProgressCurrent(page, 1);
 
+  await page.getByRole("button", { name: "Search in book" }).click();
+  const bookSearchInput = page.getByRole("searchbox", { name: "Search in book" });
+  await expect(bookSearchInput).toBeFocused();
+  await bookSearchInput.fill("鳥は空");
+  await bookSearchInput.press("Enter");
+  await expectVisibleSentenceText(page, "鳥は空を見る。");
+  await expectRsvpDisplayText(page, "鳥");
+  await expect(activeRsvpToken(page)).toHaveText("鳥");
+  await expectProgressCurrent(page, 7);
+
+  await page.getByRole("button", { name: "Search in book" }).click();
+  const unmatchedSearchInput = page.getByRole("searchbox", { name: "Search in book" });
+  await unmatchedSearchInput.fill("鳥 は 空");
+  await page.getByRole("button", { name: "Find passage" }).click();
+  await expect(unmatchedSearchInput).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator(".book-search-status")).toHaveText("No match");
+  await expect(page.locator("progress")).toHaveAttribute("value", "7");
+  await page.getByRole("button", { name: "Close search" }).click();
+
+  await page.getByRole("button", { name: /Jump to location/ }).click();
+  await page.getByRole("textbox", { name: "Location" }).fill("1");
+  await page.getByRole("textbox", { name: "Location" }).press("Enter");
+  await expectRsvpDisplayText(page, "猫");
+  await expect(activeRsvpToken(page)).toHaveText("猫");
+  await expectProgressCurrent(page, 1);
+
   await expect(page.getByRole("button", { name: "Recap" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toHaveAttribute(
     "aria-expanded",

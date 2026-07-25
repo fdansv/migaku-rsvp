@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Pause,
   Play,
+  Search,
   Send,
   Sparkles,
   X,
@@ -64,6 +65,7 @@ interface ReaderPaneProps {
   onTogglePlayback: () => void;
   onBeginProgressJump: () => void;
   onProgressJump: (location: number) => void;
+  onBookSearch: (query: string) => boolean;
   onRecap: () => void;
   onRecapFollowUp: (question: string) => void;
   onCloseRecap: () => void;
@@ -111,6 +113,7 @@ export function ReaderPane({
   onTogglePlayback,
   onBeginProgressJump,
   onProgressJump,
+  onBookSearch,
   onRecap,
   onRecapFollowUp,
   onCloseRecap,
@@ -119,10 +122,14 @@ export function ReaderPane({
   const sentenceTrackRef = useRef<HTMLSpanElement>(null);
   const sentenceScaleRef = useRef<HTMLSpanElement>(null);
   const progressInputRef = useRef<HTMLInputElement>(null);
+  const bookSearchInputRef = useRef<HTMLInputElement>(null);
   const [sentenceContextHovered, setSentenceContextHovered] = useState(false);
   const [progressEditing, setProgressEditing] = useState(false);
   const [progressInput, setProgressInput] = useState("");
   const [progressInputInvalid, setProgressInputInvalid] = useState(false);
+  const [bookSearchOpen, setBookSearchOpen] = useState(false);
+  const [bookSearchInput, setBookSearchInput] = useState("");
+  const [bookSearchInvalid, setBookSearchInvalid] = useState(false);
   const [recapFollowUpInput, setRecapFollowUpInput] = useState("");
   const displayTokenIndexSet = useMemo(() => new Set(displayTokenIndexes), [displayTokenIndexes]);
   const recapFollowUpPending = recapFollowUps.some((followUp) => followUp.status === "loading");
@@ -163,6 +170,15 @@ export function ReaderPane({
     progressInputRef.current?.focus();
     progressInputRef.current?.select();
   }, [progressEditing]);
+
+  useLayoutEffect(() => {
+    if (!bookSearchOpen) {
+      return;
+    }
+
+    bookSearchInputRef.current?.focus();
+    bookSearchInputRef.current?.select();
+  }, [bookSearchOpen]);
 
   useLayoutEffect(() => {
     if (recapStatus !== "success") {
@@ -268,94 +284,161 @@ export function ReaderPane({
         <>
           <div className="reader-meta">
             <span>{selectedBook?.title}</span>
-            <div className="reader-progress">
-              {progressEditing ? (
+            <div
+              className={`reader-progress${bookSearchOpen ? " reader-progress--search-open" : ""}`}
+            >
+              {bookSearchOpen ? (
                 <form
-                  className="progress-jump-form"
+                  className="book-search-form"
                   noValidate
                   onSubmit={(event) => {
                     event.preventDefault();
-                    submitProgressJump();
+                    submitBookSearch();
                   }}
                 >
                   <input
-                    ref={progressInputRef}
-                    className="progress-jump-input"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    aria-label="Location"
-                    aria-invalid={progressInputInvalid}
-                    value={progressInput}
+                    ref={bookSearchInputRef}
+                    className="book-search-input"
+                    type="search"
+                    aria-label="Search in book"
+                    aria-invalid={bookSearchInvalid}
+                    placeholder="Search in book"
+                    value={bookSearchInput}
                     onChange={(event) => {
-                      setProgressInput(event.target.value);
-                      setProgressInputInvalid(false);
+                      setBookSearchInput(event.target.value);
+                      setBookSearchInvalid(false);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
-                        setProgressEditing(false);
-                        setProgressInputInvalid(false);
-                      }
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        submitProgressJump();
+                        closeBookSearch();
                       }
                     }}
                   />
                   <button
-                    className="progress-jump-submit"
-                    type="button"
-                    aria-label="Go to location"
-                    title="Go to location"
-                    onClick={submitProgressJump}
+                    className="book-search-submit"
+                    type="submit"
+                    aria-label="Find passage"
+                    title="Find passage"
+                    disabled={!bookSearchInput.trim()}
                   >
-                    <Check size={14} aria-hidden="true" />
+                    <Search size={14} aria-hidden="true" />
                   </button>
+                  <button
+                    className="book-search-close"
+                    type="button"
+                    aria-label="Close search"
+                    title="Close search"
+                    onClick={closeBookSearch}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                  <span className="book-search-status" role="status">
+                    {bookSearchInvalid ? "No match" : ""}
+                  </span>
                 </form>
               ) : (
-                <button
-                  key={`${progress.current}:${progress.total}:${progress.percent}`}
-                  className={`progress-jump-button${
-                    remainingReadingLabel ? " progress-jump-button--with-remaining" : ""
-                  }`}
-                  type="button"
-                  aria-label={`Jump to location, current ${progress.current} of ${progress.total}`}
-                  title={`${progress.percent}%${
-                    remainingReadingLabel ? ` · ${remainingReadingLabel} left` : ""
-                  } · ${progress.current}/${progress.total}`}
-                  onClick={beginProgressJump}
-                >
-                  <span className="reader-progress-value reader-progress-value--full reader-progress-value--percent">
-                    {progress.percent}%
-                  </span>
-                  {remainingReadingLabel ? (
-                    <span
-                      className="reader-progress-value reader-progress-value--remaining"
-                      aria-hidden="true"
-                    >
-                      {" "}
-                      · {remainingReadingLabel} left
-                    </span>
-                  ) : null}
-                  <span
-                    className="reader-progress-value reader-progress-value--location"
-                    aria-hidden="true"
+                <>
+                  <button
+                    aria-label="Search in book"
+                    className="icon-button book-search-toggle"
+                    type="button"
+                    title="Search in book"
+                    onClick={() => {
+                      setBookSearchOpen(true);
+                      setBookSearchInvalid(false);
+                    }}
                   >
-                    {" "}
-                    · {progress.current}/{progress.total}
-                  </span>
-                </button>
+                    <Search size={17} aria-hidden="true" />
+                  </button>
+                  {progressEditing ? (
+                    <form
+                      className="progress-jump-form"
+                      noValidate
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        submitProgressJump();
+                      }}
+                    >
+                      <input
+                        ref={progressInputRef}
+                        className="progress-jump-input"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        aria-label="Location"
+                        aria-invalid={progressInputInvalid}
+                        value={progressInput}
+                        onChange={(event) => {
+                          setProgressInput(event.target.value);
+                          setProgressInputInvalid(false);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            setProgressEditing(false);
+                            setProgressInputInvalid(false);
+                          }
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            submitProgressJump();
+                          }
+                        }}
+                      />
+                      <button
+                        className="progress-jump-submit"
+                        type="button"
+                        aria-label="Go to location"
+                        title="Go to location"
+                        onClick={submitProgressJump}
+                      >
+                        <Check size={14} aria-hidden="true" />
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      key={`${progress.current}:${progress.total}:${progress.percent}`}
+                      className={`progress-jump-button${
+                        remainingReadingLabel ? " progress-jump-button--with-remaining" : ""
+                      }`}
+                      type="button"
+                      aria-label={`Jump to location, current ${progress.current} of ${progress.total}`}
+                      title={`${progress.percent}%${
+                        remainingReadingLabel ? ` · ${remainingReadingLabel} left` : ""
+                      } · ${progress.current}/${progress.total}`}
+                      onClick={beginProgressJump}
+                    >
+                      <span className="reader-progress-value reader-progress-value--full reader-progress-value--percent">
+                        {progress.percent}%
+                      </span>
+                      {remainingReadingLabel ? (
+                        <span
+                          className="reader-progress-value reader-progress-value--remaining"
+                          aria-hidden="true"
+                        >
+                          {" "}
+                          · {remainingReadingLabel} left
+                        </span>
+                      ) : null}
+                      <span
+                        className="reader-progress-value reader-progress-value--location"
+                        aria-hidden="true"
+                      >
+                        {" "}
+                        · {progress.current}/{progress.total}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    className="recap-button"
+                    type="button"
+                    disabled={recapStatus === "loading"}
+                    aria-busy={recapStatus === "loading"}
+                    onClick={onRecap}
+                  >
+                    <Sparkles size={15} aria-hidden="true" />
+                    <span>Recap</span>
+                  </button>
+                </>
               )}
-              <button
-                className="recap-button"
-                type="button"
-                disabled={recapStatus === "loading"}
-                aria-busy={recapStatus === "loading"}
-                onClick={onRecap}
-              >
-                <Sparkles size={15} aria-hidden="true" />
-                <span>Recap</span>
-              </button>
             </div>
           </div>
 
@@ -602,6 +685,28 @@ export function ReaderPane({
     onProgressJump(location);
     setProgressEditing(false);
     setProgressInputInvalid(false);
+  }
+
+  function submitBookSearch() {
+    const query = bookSearchInput.trim();
+    if (!query) {
+      bookSearchInputRef.current?.focus();
+      return;
+    }
+
+    const found = onBookSearch(query);
+    setBookSearchInvalid(!found);
+    if (!found) {
+      bookSearchInputRef.current?.focus();
+      return;
+    }
+
+    setBookSearchOpen(false);
+  }
+
+  function closeBookSearch() {
+    setBookSearchOpen(false);
+    setBookSearchInvalid(false);
   }
 
   function submitRecapFollowUp() {

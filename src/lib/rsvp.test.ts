@@ -9,6 +9,7 @@ import {
   flattenSentences,
   getDisplayText,
   getDisplayTokens,
+  getPositionForTextMatch,
   getPositionForProgressUnit,
   getProgressStats,
   getStepDelayMs,
@@ -223,6 +224,37 @@ describe("RSVP reader logic", () => {
     expect(getPositionForProgressUnit(999, sentences)).toEqual({
       sentenceIndex: 1,
       tokenIndex: [...nextSentence.tokens].reverse().find((token) => token.isWordLike)?.index ?? 0,
+    });
+  });
+
+  it("finds a literal text match in the flattened book", () => {
+    const sentences = [sentence, nextSentence];
+
+    expect(getPositionForTextMatch("犬も", sentences)).toEqual({
+      sentenceIndex: 1,
+      tokenIndex: 0,
+    });
+    expect(getPositionForTextMatch("も走る", sentences)).toEqual({
+      sentenceIndex: 1,
+      tokenIndex: 1,
+    });
+  });
+
+  it("returns null when a text search has no literal match", () => {
+    const sentences = [sentence, nextSentence];
+
+    expect(getPositionForTextMatch("", sentences)).toBeNull();
+    expect(getPositionForTextMatch("犬 が", sentences)).toBeNull();
+  });
+
+  it("keeps character-mode searches at the matching character offset", () => {
+    const characterConfig = { mode: "characters" as const, wordCount: 1, characterCount: 2 };
+    const runIndex = sentence.tokens.find((token) => token.text.includes("走る"))?.index ?? 0;
+
+    expect(getPositionForTextMatch("走る", [sentence], characterConfig)).toEqual({
+      sentenceIndex: 0,
+      tokenIndex: runIndex,
+      characterOffset: 2,
     });
   });
 

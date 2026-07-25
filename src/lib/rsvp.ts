@@ -88,6 +88,42 @@ export function clampPosition(position: ReaderPosition, sentences: Sentence[]): 
     : { sentenceIndex, tokenIndex, characterOffset };
 }
 
+export function getPositionForTextMatch(
+  query: string,
+  sentences: Sentence[],
+  stepConfig: StepConfigInput = 1,
+): ReaderPosition | null {
+  const needle = query.trim();
+  if (!needle) {
+    return null;
+  }
+
+  const config = normalizeStepConfig(stepConfig);
+  for (let sentenceIndex = 0; sentenceIndex < sentences.length; sentenceIndex += 1) {
+    const sentence = sentences[sentenceIndex];
+    const matchOffset = sentence.text.indexOf(needle);
+    if (matchOffset < 0) {
+      continue;
+    }
+
+    const tokenIndex = getTokenIndexAtOffset(sentence, matchOffset);
+    if (config.mode === "characters") {
+      return {
+        sentenceIndex,
+        tokenIndex,
+        characterOffset: matchOffset,
+      };
+    }
+
+    return {
+      sentenceIndex,
+      tokenIndex,
+    };
+  }
+
+  return null;
+}
+
 export function getDisplayTokens(
   sentence: Sentence,
   position: PositionInput,

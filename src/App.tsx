@@ -26,6 +26,7 @@ import {
   flattenSentences,
   getDisplayStep,
   getPositionForProgressUnit,
+  getPositionForTextMatch,
   getProgressStats,
   getStepConfig,
   getStepDelayMs,
@@ -726,6 +727,19 @@ export function App() {
     setPosition(getPositionForProgressUnit(location, sentences, stepConfig));
   }
 
+  function jumpToTextMatch(query: string) {
+    setAutoPaused(false);
+    stopPlayback();
+
+    const match = getPositionForTextMatch(query, sentences, stepConfig);
+    if (!match) {
+      return false;
+    }
+
+    setPosition(match);
+    return true;
+  }
+
   async function handleRecap() {
     setAutoPaused(false);
     stopPlayback();
@@ -1069,6 +1083,7 @@ export function App() {
           onTogglePlayback={togglePlayback}
           onBeginProgressJump={beginProgressJump}
           onProgressJump={jumpToProgressLocation}
+          onBookSearch={jumpToTextMatch}
           onRecap={handleRecap}
           onRecapFollowUp={handleRecapFollowUp}
           onCloseRecap={() => setRecap(createEmptyRecapState())}
