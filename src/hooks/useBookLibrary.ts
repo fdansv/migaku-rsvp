@@ -14,12 +14,23 @@ import {
   loadBooks,
   loadSelectedBookId,
   saveBook,
+  saveBookProgress,
   saveSelectedBookId,
 } from "../lib/storage";
 import { CURRENT_TOKENIZER_VERSION, tokenizeJapanese, warmJapaneseTokenizer } from "../lib/text";
 import type { Book, ReaderPosition } from "../types";
 
 const EMPTY_POSITION: ReaderPosition = { sentenceIndex: 0, tokenIndex: 0 };
+
+interface PendingProgressSave {
+  persist: () => Promise<void>;
+  fallbackMessage: string;
+}
+
+interface ProgressSaveQueue {
+  running: boolean;
+  pending: PendingProgressSave | null;
+}
 
 export function useBookLibrary() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -29,6 +40,8 @@ export function useBookLibrary() {
   const [error, setError] = useState<string | null>(null);
   const [serverLibraryEnabled, setServerLibraryEnabled] = useState(false);
   const selectedBookIdRef = useRef<string | null>(null);
+  const progressByBookIdRef = useRef(new Map<string, ReaderPosition>());
+  const progressSaveQueuesRef = useRef(new Map<string, ProgressSaveQueue>());
 
   useEffect(() => {
     selectedBookIdRef.current = selectedBookId;
@@ -55,6 +68,7 @@ export function useBookLibrary() {
         createdAt: book.createdAt,
         progress,
       };
+      progressByBookIdRef.current.set(book.id, progress);
 
       setBooks((currentBooks) =>
         currentBooks.map((candidate) => (candidate.id === book.id ? serverBook : candidate)),
@@ -97,6 +111,9 @@ export function useBookLibrary() {
         setServerLibraryEnabled(serverLibrary.enabled);
         const serverBooks = serverLibrary.books;
         const nextBooks = [...serverBooks, ...upgradedBooks];
+        progressByBookIdRef.current = new Map(
+          nextBooks.map((book) => [book.id, book.progress]),
+        );
         const savedBookId = loadSelectedBookId();
         const initialBook =
           nextBooks.find((book) => book.id === savedBookId) ?? nextBooks[0] ?? null;
@@ -126,6 +143,21 @@ export function useBookLibrary() {
     [books, selectedBookId],
   );
 
+  useEffect(() => {
+    if (!selectedBookId || selectedBook) {
+      return;
+    }
+
+    const nextBook = books[0] ?? null;
+    saveSelectedBookId(nextBook?.id ?? null);
+    setSelectedBookId(nextBook?.id ?? null);
+    setPosition(
+      nextBook
+        ? (progressByBookIdRef.current.get(nextBook.id) ?? nextBook.progress)
+        : EMPTY_POSITION,
+    );
+  }, [books, selectedBook, selectedBookId]);
+
   const importBook = useCallback(async (file: File) => {
     setError(null);
     setIsImporting(true);
@@ -141,6 +173,7 @@ export function useBookLibrary() {
           createdAt: entry.modifiedAt,
           progress: entry.progress,
         };
+        progressByBookIdRef.current.set(serverBook.id, serverBook.progress);
         setBooks((currentBooks) => [
           serverBook,
           ...currentBooks.filter((candidate) => candidate.id !== serverBook.id),
@@ -154,6 +187,7 @@ export function useBookLibrary() {
       const book = await parseEpub(file);
       const localBook: Book = { ...book, source: "local" };
       await saveBook(localBook);
+      progressByBookIdRef.current.set(localBook.id, localBook.progress);
       setBooks((currentBooks) => [
         localBook,
         ...currentBooks.filter((candidate) => candidate.id !== localBook.id),
@@ -171,7 +205,7 @@ export function useBookLibrary() {
   const selectBook = useCallback((book: Book) => {
     saveSelectedBookId(book.id);
     setSelectedBookId(book.id);
-    setPosition(book.progress);
+    setPosition(progressByBookIdRef.current.get(book.id) ?? book.progress);
     if (book.source === "server" && book.chapters.length === 0) {
       void hydrateServerBook(book);
     }
@@ -184,52 +218,50 @@ export function useBookLibrary() {
         return;
       }
 
+      const progressSaveQueue = progressSaveQueuesRef.current.get(bookId);
+      if (progressSaveQueue) {
+        progressSaveQueue.pending = null;
+      }
       await deleteBook(bookId);
-      setBooks((currentBooks) => {
-        const nextBooks = currentBooks.filter((book) => book.id !== bookId);
-        if (selectedBookId === bookId) {
-          const nextBook = nextBooks[0] ?? null;
-          saveSelectedBookId(nextBook?.id ?? null);
-          setSelectedBookId(nextBook?.id ?? null);
-          setPosition(nextBook?.progress ?? EMPTY_POSITION);
-        }
-        return nextBooks;
-      });
+      progressByBookIdRef.current.delete(bookId);
+      setBooks((currentBooks) =>
+        currentBooks.filter((candidate) => candidate.id !== bookId),
+      );
     },
-    [books, selectedBookId],
+    [books],
   );
 
   const saveSelectedBookProgress = useCallback(
     (progress: ReaderPosition) => {
-      setBooks((currentBooks) => {
-        const book = currentBooks.find((candidate) => candidate.id === selectedBookId);
-        if (
-          !book ||
-          (book.progress.sentenceIndex === progress.sentenceIndex &&
-            book.progress.tokenIndex === progress.tokenIndex &&
-            book.progress.characterOffset === progress.characterOffset)
-        ) {
-          return currentBooks;
-        }
+      if (!selectedBook) {
+        return;
+      }
 
-        const updatedBook = { ...book, progress };
-        if (updatedBook.source === "server") {
-          void saveServerBookProgress(updatedBook.id, progress).catch((saveError) => {
-            setError(
-              saveError instanceof Error
-                ? saveError.message
-                : "Could not save server reading progress.",
-            );
-          });
-        } else {
-          void saveBook(updatedBook);
-        }
-        return currentBooks.map((candidate) =>
-          candidate.id === selectedBookId ? updatedBook : candidate,
-        );
-      });
+      const savedProgress =
+        progressByBookIdRef.current.get(selectedBook.id) ?? selectedBook.progress;
+      if (isSameReaderPosition(savedProgress, progress)) {
+        return;
+      }
+
+      progressByBookIdRef.current.set(selectedBook.id, progress);
+      const persist =
+        selectedBook.source === "server"
+          ? () => saveServerBookProgress(selectedBook.id, progress)
+          : () => saveBookProgress(selectedBook.id, progress);
+      enqueueProgressSave(
+        progressSaveQueuesRef.current,
+        selectedBook.id,
+        {
+          persist,
+          fallbackMessage:
+            selectedBook.source === "server"
+              ? "Could not save server reading progress."
+              : "Could not save reading progress.",
+        },
+        setError,
+      );
     },
-    [selectedBookId],
+    [selectedBook],
   );
 
   return {
@@ -245,6 +277,53 @@ export function useBookLibrary() {
     removeBook,
     saveSelectedBookProgress,
   };
+}
+
+function isSameReaderPosition(left: ReaderPosition, right: ReaderPosition) {
+  return (
+    left.sentenceIndex === right.sentenceIndex &&
+    left.tokenIndex === right.tokenIndex &&
+    left.characterOffset === right.characterOffset
+  );
+}
+
+function enqueueProgressSave(
+  queues: Map<string, ProgressSaveQueue>,
+  bookId: string,
+  pending: PendingProgressSave,
+  onError: (message: string) => void,
+) {
+  const queue = queues.get(bookId) ?? { running: false, pending: null };
+  queue.pending = pending;
+  queues.set(bookId, queue);
+  if (queue.running) {
+    return;
+  }
+
+  queue.running = true;
+  void drainProgressSaveQueue(queues, bookId, queue, onError);
+}
+
+async function drainProgressSaveQueue(
+  queues: Map<string, ProgressSaveQueue>,
+  bookId: string,
+  queue: ProgressSaveQueue,
+  onError: (message: string) => void,
+) {
+  while (queue.pending) {
+    const pending = queue.pending;
+    queue.pending = null;
+    try {
+      await pending.persist();
+    } catch (saveError) {
+      onError(saveError instanceof Error ? saveError.message : pending.fallbackMessage);
+    }
+  }
+
+  queue.running = false;
+  if (queues.get(bookId) === queue) {
+    queues.delete(bookId);
+  }
 }
 
 async function loadServerBooks() {

@@ -69,10 +69,12 @@ import type {
   Sentence,
 } from "./types";
 
-const BUFFER_SENTENCES_BEHIND = 20;
-const BUFFER_SENTENCES_AHEAD = 100;
+const BUFFER_SENTENCES_BEHIND = 10;
+const BUFFER_SENTENCES_AHEAD = 30;
 const BUFFER_WINDOW_SIZE = 40;
 const READING_STATS_DAY_COUNT = 31;
+const PLAYBACK_PROGRESS_SAVE_INTERVAL_MS = 5_000;
+const IDLE_PROGRESS_SAVE_DELAY_MS = 300;
 const SERVER_AI_API_URL = "/api/ai/chat";
 const MIN_READING_SESSION_MS = 100;
 const TRANSPORT_KEY_CODES = new Set([
@@ -164,6 +166,17 @@ export function App() {
     tokenGroupsBySentenceId: {},
   });
   const activeReadingSessionRef = useRef<ActiveReadingSession | null>(null);
+  const currentReadingLocationRef = useRef<{
+    bookId: string;
+    location: ReadingSessionLocation;
+  } | null>(null);
+  const transportActionsRef = useRef<{
+    togglePlayback: () => void;
+    goNext: () => void;
+    goPrevious: () => void;
+    goNextSentence: () => void;
+    goPreviousSentence: () => void;
+  } | null>(null);
   const translationRequestsRef = useRef(new Set<string>());
   const serverReadingSessionsEnabledRef = useRef(false);
   const serverLookupEventsEnabledRef = useRef(false);
@@ -269,6 +282,9 @@ export function App() {
     () => getReadingSessionLocation(safePosition, progress),
     [progress, safePosition],
   );
+  currentReadingLocationRef.current = selectedBookId
+    ? { bookId: selectedBookId, location: currentReadingLocation }
+    : null;
   const displayStep = useMemo(
     () =>
       currentSentence
@@ -446,16 +462,42 @@ export function App() {
   ]);
 
   useEffect(() => {
-    if (!selectedBookId || !currentSentence) {
+    if (!playing || !selectedBookId || !currentSentence) {
       return;
     }
 
+    const activeBookId = selectedBookId;
+    const timer = window.setInterval(() => {
+      const current = currentReadingLocationRef.current;
+      if (current?.bookId === activeBookId) {
+        saveSelectedBookProgress(current.location.position);
+      }
+    }, PLAYBACK_PROGRESS_SAVE_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [playing, saveSelectedBookProgress, selectedBookId]);
+
+  useEffect(() => {
+    if (playing || !selectedBookId || !currentSentence) {
+      return;
+    }
+
+    const activeBookId = selectedBookId;
     const timer = window.setTimeout(() => {
-      saveSelectedBookProgress(safePosition);
-    }, 300);
+      const current = currentReadingLocationRef.current;
+      if (current?.bookId === activeBookId) {
+        saveSelectedBookProgress(current.location.position);
+      }
+    }, IDLE_PROGRESS_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [currentSentence, safePosition, saveSelectedBookProgress, selectedBookId]);
+  }, [
+    currentSentence,
+    playing,
+    safePosition,
+    saveSelectedBookProgress,
+    selectedBookId,
+  ]);
 
   useEffect(() => {
     if (!playing || !currentSentence) {
@@ -533,7 +575,12 @@ export function App() {
     }
 
     function finishForLostFocus() {
-      finishReadingSession(Date.now(), { endLocation: currentReadingLocation });
+      const current = currentReadingLocationRef.current;
+      const location = current?.bookId === selectedBookId ? current.location : undefined;
+      if (location) {
+        saveSelectedBookProgress(location.position);
+      }
+      finishReadingSession(Date.now(), { endLocation: location });
       setPlaying(false);
     }
 
@@ -552,11 +599,19 @@ export function App() {
       window.removeEventListener("blur", finishForLostFocus);
       window.removeEventListener("pagehide", finishForLostFocus);
     };
-  }, [currentReadingLocation, playing]);
+  }, [playing, saveSelectedBookProgress]);
 
   useEffect(() => () => {
     finishReadingSession(Date.now(), { updateState: false });
   }, []);
+
+  transportActionsRef.current = {
+    togglePlayback,
+    goNext,
+    goPrevious,
+    goNextSentence,
+    goPreviousSentence,
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -572,36 +627,38 @@ export function App() {
 
       if (event.code === "Space" && !target?.matches("button")) {
         event.preventDefault();
-        togglePlayback();
+        transportActionsRef.current?.togglePlayback();
       }
       if (event.code === "ArrowRight") {
         event.preventDefault();
-        goNext();
+        transportActionsRef.current?.goNext();
       }
       if (event.code === "ArrowLeft") {
         event.preventDefault();
-        goPrevious();
+        transportActionsRef.current?.goPrevious();
       }
       if (event.code === "ArrowDown") {
         event.preventDefault();
-        goNextSentence();
+        transportActionsRef.current?.goNextSentence();
       }
       if (event.code === "ArrowUp") {
         event.preventDefault();
-        goPreviousSentence();
+        transportActionsRef.current?.goPreviousSentence();
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  });
+  }, []);
 
   function handleImportFile(file: File) {
+    saveCurrentBookProgress();
     stopPlayback();
     void importBook(file);
   }
 
   function handleSelectBook(book: Book) {
+    saveCurrentBookProgress();
     stopPlayback();
     selectBook(book);
   }
@@ -849,6 +906,13 @@ export function App() {
   function stopPlayback() {
     clearPlaybackTimer();
     setPlaying(false);
+  }
+
+  function saveCurrentBookProgress() {
+    const current = currentReadingLocationRef.current;
+    if (current?.bookId === selectedBookId) {
+      saveSelectedBookProgress(current.location.position);
+    }
   }
 
   function clearPlaybackTimer() {

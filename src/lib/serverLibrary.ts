@@ -106,6 +106,7 @@ export async function loadServerBookProgress(bookId: string) {
 export async function saveServerBookProgress(bookId: string, progress: ReaderPosition) {
   const response = await fetchApi(`/books/${encodeURIComponent(bookId)}/progress`, {
     method: "PUT",
+    keepalive: true,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",

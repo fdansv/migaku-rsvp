@@ -605,7 +605,7 @@ test("loads server reading stats and migrates local reading sessions", async ({
   await page.evaluate(async ({ lookupEvent, session }) => {
     localStorage.clear();
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open("migaku-rsvp", 3);
+      const request = indexedDB.open("migaku-rsvp");
       request.onupgradeneeded = () => {
         const database = request.result;
         if (!database.objectStoreNames.contains("books")) {
@@ -947,6 +947,125 @@ test("backs up from the playback position after manual steps", async ({ page }, 
   await expectVisibleSentenceText(page, "犬も走る。");
   await expectRsvpDisplayText(page, "も");
   await expectProgressCurrent(page, 5);
+});
+
+test("keeps playback persistence and focus listeners bounded across steps", async ({
+  page,
+}, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "bounded-playback-effects.epub");
+  await createSmallEpub(epubPath, ["猫が走る。".repeat(20)]);
+
+  await installPlaybackMetrics(page);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem(
+      "migaku-rsvp:settings",
+      JSON.stringify({ stepsPerMinute: 150, stopMode: "never" }),
+    );
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  const afterImport = await readPlaybackMetrics(page);
+
+  await page.getByRole("button", { name: "Play" }).click();
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const { focusListeners } = await readPlaybackMetrics(page);
+      return Object.values(focusListeners).every(({ adds }) => adds > 0);
+    })
+    .toBe(true);
+  const afterPlay = await readPlaybackMetrics(page);
+
+  await expect
+    .poll(async () => Number(await page.locator("progress").getAttribute("value")))
+    .toBeGreaterThanOrEqual(4);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+  const afterSteps = await readPlaybackMetrics(page);
+
+  expect(afterSteps.bookPuts).toBe(afterImport.bookPuts);
+  expect(afterSteps.focusListeners).toEqual(afterPlay.focusListeners);
+  await page.getByRole("button", { name: "Pause" }).click();
+
+  const todayBar = page
+    .locator(".stats-section > .reading-chart .reading-chart-bar-track")
+    .last();
+  const todayTooltip = page
+    .locator(".stats-section > .reading-chart .reading-chart-tooltip")
+    .last();
+  await todayBar.hover();
+  await expect(todayTooltip).toBeVisible();
+});
+
+test("flushes playback progress before switching books", async ({ page }, testInfo) => {
+  const firstEpubPath = path.join(testInfo.outputDir, "switch-progress-first.epub");
+  const secondEpubPath = path.join(testInfo.outputDir, "switch-progress-second.epub");
+  await createSmallEpub(firstEpubPath, ["猫が走る。".repeat(20)]);
+  await createSmallEpub(secondEpubPath, ["犬が眠る。"]);
+  await installPlaybackMetrics(page);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem(
+      "migaku-rsvp:settings",
+      JSON.stringify({ stepsPerMinute: 80, stopMode: "never" }),
+    );
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  const fileInput = page.locator('input[type="file"]');
+  await fileInput.setInputFiles(firstEpubPath);
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await fileInput.setInputFiles(secondEpubPath);
+  await expect(page.locator(".rsvp-token-display")).toHaveText("犬が眠る。", {
+    timeout: 30_000,
+  });
+
+  const libraryBooks = page.locator(".book-select");
+  await expect(libraryBooks).toHaveCount(2);
+  await libraryBooks.nth(1).click();
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。");
+  const beforePlayback = await readPlaybackMetrics(page);
+
+  await page.getByRole("button", { name: "Play" }).click();
+  await expect
+    .poll(async () => Number(await page.locator("progress").getAttribute("value")))
+    .toBeGreaterThan(1);
+  const progressBeforeSwitch = Number(await page.locator("progress").getAttribute("value"));
+  const beforeSwitch = await readPlaybackMetrics(page);
+  expect(beforeSwitch.bookProgressPuts).toBe(beforePlayback.bookProgressPuts);
+
+  await libraryBooks.first().click();
+  await expect(page.locator(".rsvp-token-display")).toHaveText("犬が眠る。");
+  await expect
+    .poll(async () => (await readPlaybackMetrics(page)).bookProgressPuts)
+    .toBeGreaterThan(beforeSwitch.bookProgressPuts);
+
+  await libraryBooks.nth(1).click();
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。");
+  const resumedProgress = Number(await page.locator("progress").getAttribute("value"));
+  expect(resumedProgress).toBeGreaterThanOrEqual(progressBeforeSwitch);
+
+  await page.reload();
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+  await expect(page.locator("progress")).toHaveAttribute("value", String(resumedProgress));
 });
 
 test("continues character-mode playback inside a multi-character token", async ({
@@ -1654,6 +1773,102 @@ async function setRangeValue(locator: Locator, value: string) {
   await locator.fill(value);
 }
 
+async function installPlaybackMetrics(page: Page) {
+  await page.addInitScript(() => {
+    const metrics = {
+      bookPuts: 0,
+      bookProgressPuts: 0,
+      focusListeners: {
+        blur: { adds: 0, removes: 0 },
+        pagehide: { adds: 0, removes: 0 },
+        visibilitychange: { adds: 0, removes: 0 },
+      },
+    };
+    const testWindow = window as Window & { __playbackMetrics?: typeof metrics };
+    testWindow.__playbackMetrics = metrics;
+
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      if (this.name === "books") {
+        metrics.bookPuts += 1;
+      }
+      if (this.name === "bookProgress") {
+        metrics.bookProgressPuts += 1;
+      }
+      return originalPut.apply(this, args);
+    };
+
+    const originalWindowAdd = window.addEventListener;
+    const originalWindowRemove = window.removeEventListener;
+    window.addEventListener = function (
+      this: Window,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type === "blur" || type === "pagehide") {
+        metrics.focusListeners[type].adds += 1;
+      }
+      return originalWindowAdd.call(this, type, listener, options);
+    } as typeof window.addEventListener;
+    window.removeEventListener = function (
+      this: Window,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | EventListenerOptions,
+    ) {
+      if (type === "blur" || type === "pagehide") {
+        metrics.focusListeners[type].removes += 1;
+      }
+      return originalWindowRemove.call(this, type, listener, options);
+    } as typeof window.removeEventListener;
+
+    const originalDocumentAdd = document.addEventListener;
+    const originalDocumentRemove = document.removeEventListener;
+    document.addEventListener = function (
+      this: Document,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type === "visibilitychange") {
+        metrics.focusListeners.visibilitychange.adds += 1;
+      }
+      return originalDocumentAdd.call(this, type, listener, options);
+    } as typeof document.addEventListener;
+    document.removeEventListener = function (
+      this: Document,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | EventListenerOptions,
+    ) {
+      if (type === "visibilitychange") {
+        metrics.focusListeners.visibilitychange.removes += 1;
+      }
+      return originalDocumentRemove.call(this, type, listener, options);
+    } as typeof document.removeEventListener;
+  });
+}
+
+async function readPlaybackMetrics(page: Page) {
+  return page.evaluate(() => {
+    const testWindow = window as Window & {
+      __playbackMetrics?: {
+        bookPuts: number;
+        bookProgressPuts: number;
+        focusListeners: Record<
+          "blur" | "pagehide" | "visibilitychange",
+          { adds: number; removes: number }
+        >;
+      };
+    };
+    if (!testWindow.__playbackMetrics) {
+      throw new Error("Playback metrics were not installed.");
+    }
+    return structuredClone(testWindow.__playbackMetrics);
+  });
+}
+
 async function expectRsvpDisplayText(page: Page, text: string) {
   await expect(page.locator(".rsvp-token-display")).toHaveAttribute("data-rsvp-display-text", text);
 }
@@ -1982,7 +2197,7 @@ async function storedLookupTerms(page: Page) {
   return page.evaluate(
     () =>
       new Promise<string[]>((resolve, reject) => {
-        const request = indexedDB.open("migaku-rsvp", 3);
+        const request = indexedDB.open("migaku-rsvp");
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
           const database = request.result;

@@ -1,5 +1,5 @@
 import { openDB, type DBSchema } from "idb";
-import type { Book, LookupEvent, ReadingSession } from "../types";
+import type { Book, LookupEvent, ReaderPosition, ReadingSession } from "../types";
 
 const SELECTED_BOOK_ID_KEY = "migaku-rsvp:selected-book-id";
 
@@ -8,6 +8,10 @@ interface MigakuRsvpDatabase extends DBSchema {
     key: string;
     value: Book;
     indexes: { "by-created": string };
+  };
+  bookProgress: {
+    key: string;
+    value: ReaderPosition;
   };
   readingSessions: {
     key: string;
@@ -27,11 +31,15 @@ interface MigakuRsvpDatabase extends DBSchema {
   };
 }
 
-const dbPromise = openDB<MigakuRsvpDatabase>("migaku-rsvp", 3, {
+const dbPromise = openDB<MigakuRsvpDatabase>("migaku-rsvp", 4, {
   upgrade(db) {
     if (!db.objectStoreNames.contains("books")) {
       const store = db.createObjectStore("books", { keyPath: "id" });
       store.createIndex("by-created", "createdAt");
+    }
+
+    if (!db.objectStoreNames.contains("bookProgress")) {
+      db.createObjectStore("bookProgress");
     }
 
     if (!db.objectStoreNames.contains("readingSessions")) {
@@ -50,18 +58,44 @@ const dbPromise = openDB<MigakuRsvpDatabase>("migaku-rsvp", 3, {
 
 export async function loadBooks() {
   const db = await dbPromise;
-  const books = await db.getAll("books");
-  return books.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const transaction = db.transaction(["books", "bookProgress"], "readonly");
+  const [books, progressBookIds, progressValues] = await Promise.all([
+    transaction.objectStore("books").getAll(),
+    transaction.objectStore("bookProgress").getAllKeys(),
+    transaction.objectStore("bookProgress").getAll(),
+  ]);
+  await transaction.done;
+
+  const progressByBookId = new Map(
+    progressBookIds.map((bookId, index) => [bookId, progressValues[index]]),
+  );
+  return books
+    .map((book) => {
+      const progress = progressByBookId.get(book.id);
+      return progress ? { ...book, progress } : book;
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function saveBook(book: Book) {
   const db = await dbPromise;
-  await db.put("books", book);
+  const transaction = db.transaction(["books", "bookProgress"], "readwrite");
+  await transaction.objectStore("books").put(book);
+  await transaction.objectStore("bookProgress").put(book.progress, book.id);
+  await transaction.done;
+}
+
+export async function saveBookProgress(bookId: string, progress: ReaderPosition) {
+  const db = await dbPromise;
+  await db.put("bookProgress", progress, bookId);
 }
 
 export async function deleteBook(bookId: string) {
   const db = await dbPromise;
-  await db.delete("books", bookId);
+  const transaction = db.transaction(["books", "bookProgress"], "readwrite");
+  await transaction.objectStore("books").delete(bookId);
+  await transaction.objectStore("bookProgress").delete(bookId);
+  await transaction.done;
 }
 
 export async function loadReadingSessions() {

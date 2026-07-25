@@ -1,5 +1,5 @@
 import { BarChart3, BookOpen } from "lucide-react";
-import { useMemo, useState, type CSSProperties } from "react";
+import { memo, useMemo, useState, type CSSProperties } from "react";
 import {
   formatReadingDuration,
   type BookLookupStats,
@@ -9,6 +9,16 @@ import {
   type LookupStatsDay,
   type ReadingStatsDay,
 } from "../lib/readingStats";
+
+const lastReadDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+});
+const chartDateFormatter = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+});
 
 interface StatsPanelProps {
   days: ReadingStatsDay[];
@@ -29,29 +39,6 @@ export function StatsPanel({
   bookLookupDays,
   progressPercent,
 }: StatsPanelProps) {
-  const [activeTooltipDate, setActiveTooltipDate] = useState<string | null>(null);
-  const [activeBookProgressDate, setActiveBookProgressDate] = useState<string | null>(null);
-  const [activeBookSpeedDate, setActiveBookSpeedDate] = useState<string | null>(null);
-  const [activeBookLookupDate, setActiveBookLookupDate] = useState<string | null>(null);
-  const chartDays = useMemo(() => getVisibleChartDays(days), [days]);
-  const visibleBookProgressDays = useMemo(
-    () => getVisibleBookProgressDays(bookProgressDays),
-    [bookProgressDays],
-  );
-  const visibleBookSpeedDays = useMemo(
-    () => getVisibleBookSpeedDays(bookSpeedDays),
-    [bookSpeedDays],
-  );
-  const visibleBookLookupDays = useMemo(
-    () => getVisibleBookLookupDays(bookLookupDays),
-    [bookLookupDays],
-  );
-  const maxDurationMs = Math.max(...chartDays.map((day) => day.durationMs), 0);
-  const maxBookSpeed = Math.max(
-    ...visibleBookSpeedDays.map((day) => day.charactersPerMinute),
-    0,
-  );
-  const maxBookLookups = Math.max(...visibleBookLookupDays.map((day) => day.lookupCount), 0);
   const today = days.at(-1);
   const hasBookStats = Boolean(bookStats || bookLookupStats);
 
@@ -94,213 +81,49 @@ export function StatsPanel({
               <span>{formatLastRead(bookStats.lastReadAt)}</span>
             </p>
           ) : null}
-          <div className="book-chart-caption">Progress by day</div>
-          <div
-            className="reading-chart book-progress-chart"
-            role="group"
-            aria-label="Cumulative book progress by day"
-          >
-            <div className="reading-chart-axis" aria-hidden="true">
-              <span>100%</span>
-              <span>50%</span>
-              <span>0%</span>
-            </div>
-            <div
-              className="reading-chart-bars"
-              style={
-                { "--reading-chart-days": visibleBookProgressDays.length } as CSSProperties
-              }
-            >
-              {visibleBookProgressDays.map((day, index) => {
-                const height =
-                  day.cumulativePercent > 0 ? Math.max(day.cumulativePercent, 3) : 0;
-                const tooltipLabel = formatBookProgressTooltip(day);
-                const shouldShowLabel = shouldShowBookProgressDayLabel(
-                  day,
-                  index,
-                  visibleBookProgressDays.length,
-                );
-
-                return (
-                  <div
-                    className={`reading-chart-day${
-                      shouldShowLabel ? " has-visible-label" : ""
-                    }`}
-                    key={day.date}
-                  >
-                    <button
-                      className={`reading-chart-bar-track${
-                        activeBookProgressDate === day.date ? " is-active" : ""
-                      }`}
-                      type="button"
-                      aria-label={`${formatChartDateLabel(day.date)}: ${tooltipLabel}`}
-                      onClick={() =>
-                        setActiveBookProgressDate((currentDate) =>
-                          currentDate === day.date ? null : day.date,
-                        )
-                      }
-                      onBlur={() => setActiveBookProgressDate(null)}
-                    >
-                      <div
-                        className="reading-chart-bar"
-                        style={{ height: `${height}%` }}
-                        aria-hidden="true"
-                      />
-                      <span className="reading-chart-tooltip" role="tooltip">
-                        {tooltipLabel}
-                      </span>
-                    </button>
-                    <span aria-hidden={!shouldShowLabel}>{formatChartTickLabel(day.date)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="book-chart-caption">Speed by day</div>
-          <div
-            className="reading-chart book-speed-chart"
-            role="group"
-            aria-label="Book reading speed by day"
-          >
-            <div className="reading-chart-axis" aria-hidden="true">
-              <span>{formatReadingRate(maxBookSpeed)}</span>
-              <span>{formatReadingRate(maxBookSpeed / 2)}</span>
-              <span>0/min</span>
-            </div>
-            <div
-              className="reading-chart-bars"
-              style={{ "--reading-chart-days": visibleBookSpeedDays.length } as CSSProperties}
-            >
-              {visibleBookSpeedDays.map((day, index) => {
-                const height =
-                  maxBookSpeed > 0
-                    ? Math.max((day.charactersPerMinute / maxBookSpeed) * 100, 3)
-                    : 0;
-                const tooltipLabel = formatBookSpeedTooltip(day);
-                const shouldShowLabel = shouldShowBookSpeedDayLabel(
-                  day,
-                  index,
-                  visibleBookSpeedDays.length,
-                );
-
-                return (
-                  <div
-                    className={`reading-chart-day${
-                      shouldShowLabel ? " has-visible-label" : ""
-                    }`}
-                    key={day.date}
-                  >
-                    <button
-                      className={`reading-chart-bar-track${
-                        activeBookSpeedDate === day.date ? " is-active" : ""
-                      }`}
-                      type="button"
-                      aria-label={`${formatChartDateLabel(day.date)}: ${tooltipLabel}`}
-                      onClick={() =>
-                        setActiveBookSpeedDate((currentDate) =>
-                          currentDate === day.date ? null : day.date,
-                        )
-                      }
-                      onBlur={() => setActiveBookSpeedDate(null)}
-                    >
-                      <div
-                        className="reading-chart-bar"
-                        style={{ height: `${height}%` }}
-                        aria-hidden="true"
-                      />
-                      <span className="reading-chart-tooltip" role="tooltip">
-                        {tooltipLabel}
-                      </span>
-                    </button>
-                    <span aria-hidden={!shouldShowLabel}>{formatChartTickLabel(day.date)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="book-chart-caption">Lookups by day</div>
-          <div
-            className="reading-chart book-lookups-chart"
-            role="group"
-            aria-label="Book lookups by day"
-          >
-            <div className="reading-chart-axis" aria-hidden="true">
-              <span>{formatLookupAxisCount(maxBookLookups)}</span>
-              <span>{formatLookupAxisCount(Math.ceil(maxBookLookups / 2))}</span>
-              <span>0</span>
-            </div>
-            <div
-              className="reading-chart-bars"
-              style={{ "--reading-chart-days": visibleBookLookupDays.length } as CSSProperties}
-            >
-              {visibleBookLookupDays.map((day, index) => {
-                const height =
-                  maxBookLookups > 0
-                    ? Math.max((day.lookupCount / maxBookLookups) * 100, 3)
-                    : 0;
-                const tooltipLabel = formatLookupCount(day.lookupCount);
-                const shouldShowLabel = shouldShowBookLookupDayLabel(
-                  day,
-                  index,
-                  visibleBookLookupDays.length,
-                );
-
-                return (
-                  <div
-                    className={`reading-chart-day${
-                      shouldShowLabel ? " has-visible-label" : ""
-                    }`}
-                    key={day.date}
-                  >
-                    <button
-                      className={`reading-chart-bar-track${
-                        activeBookLookupDate === day.date ? " is-active" : ""
-                      }`}
-                      type="button"
-                      aria-label={`${formatChartDateLabel(day.date)}: ${tooltipLabel}`}
-                      onClick={() =>
-                        setActiveBookLookupDate((currentDate) =>
-                          currentDate === day.date ? null : day.date,
-                        )
-                      }
-                      onBlur={() => setActiveBookLookupDate(null)}
-                    >
-                      <div
-                        className="reading-chart-bar"
-                        style={{ height: `${height}%` }}
-                        aria-hidden="true"
-                      />
-                      <span className="reading-chart-tooltip" role="tooltip">
-                        {tooltipLabel}
-                      </span>
-                    </button>
-                    <span aria-hidden={!shouldShowLabel}>{formatChartTickLabel(day.date)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <BookProgressChart days={bookProgressDays} />
+          <BookSpeedChart days={bookSpeedDays} />
+          <BookLookupChart days={bookLookupDays} />
         </div>
       ) : null}
+      <ReadingTimeChart days={days} />
+    </section>
+  );
+}
+
+const BookProgressChart = memo(function BookProgressChart({
+  days,
+}: {
+  days: BookProgressDay[];
+}) {
+  const [activeDate, setActiveDate] = useState<string | null>(null);
+  const visibleDays = useMemo(() => getVisibleBookProgressDays(days), [days]);
+
+  return (
+    <>
+      <div className="book-chart-caption">Progress by day</div>
       <div
-        className="reading-chart"
+        className="reading-chart book-progress-chart"
         role="group"
-        aria-label="Daily reading time for the last month"
+        aria-label="Cumulative book progress by day"
       >
         <div className="reading-chart-axis" aria-hidden="true">
-          <span>{formatReadingDuration(maxDurationMs)}</span>
-          <span>{formatReadingDuration(maxDurationMs / 2)}</span>
-          <span>0m</span>
+          <span>100%</span>
+          <span>50%</span>
+          <span>0%</span>
         </div>
         <div
           className="reading-chart-bars"
-          style={{ "--reading-chart-days": chartDays.length } as CSSProperties}
+          style={{ "--reading-chart-days": visibleDays.length } as CSSProperties}
         >
-          {chartDays.map((day, index) => {
-            const height =
-              maxDurationMs > 0 ? Math.max((day.durationMs / maxDurationMs) * 100, 3) : 0;
-            const tooltipLabel = formatReadingMinutes(day.durationMs);
-            const shouldShowLabel = shouldShowChartDayLabel(day, index, chartDays.length);
+          {visibleDays.map((day, index) => {
+            const height = day.cumulativePercent > 0 ? Math.max(day.cumulativePercent, 3) : 0;
+            const tooltipLabel = formatBookProgressTooltip(day);
+            const shouldShowLabel = shouldShowBookProgressDayLabel(
+              day,
+              index,
+              visibleDays.length,
+            );
 
             return (
               <div
@@ -309,16 +132,16 @@ export function StatsPanel({
               >
                 <button
                   className={`reading-chart-bar-track${
-                    activeTooltipDate === day.date ? " is-active" : ""
+                    activeDate === day.date ? " is-active" : ""
                   }`}
                   type="button"
                   aria-label={`${formatChartDateLabel(day.date)}: ${tooltipLabel}`}
                   onClick={() =>
-                    setActiveTooltipDate((currentDate) =>
+                    setActiveDate((currentDate) =>
                       currentDate === day.date ? null : day.date,
                     )
                   }
-                  onBlur={() => setActiveTooltipDate(null)}
+                  onBlur={() => setActiveDate(null)}
                 >
                   <div
                     className="reading-chart-bar"
@@ -335,9 +158,218 @@ export function StatsPanel({
           })}
         </div>
       </div>
-    </section>
+    </>
   );
-}
+});
+
+const BookSpeedChart = memo(function BookSpeedChart({ days }: { days: BookSpeedDay[] }) {
+  const [activeDate, setActiveDate] = useState<string | null>(null);
+  const visibleDays = useMemo(() => getVisibleBookSpeedDays(days), [days]);
+  const maxSpeed = useMemo(
+    () => Math.max(...visibleDays.map((day) => day.charactersPerMinute), 0),
+    [visibleDays],
+  );
+
+  return (
+    <>
+      <div className="book-chart-caption">Speed by day</div>
+      <div
+        className="reading-chart book-speed-chart"
+        role="group"
+        aria-label="Book reading speed by day"
+      >
+        <div className="reading-chart-axis" aria-hidden="true">
+          <span>{formatReadingRate(maxSpeed)}</span>
+          <span>{formatReadingRate(maxSpeed / 2)}</span>
+          <span>0/min</span>
+        </div>
+        <div
+          className="reading-chart-bars"
+          style={{ "--reading-chart-days": visibleDays.length } as CSSProperties}
+        >
+          {visibleDays.map((day, index) => {
+            const height =
+              maxSpeed > 0 ? Math.max((day.charactersPerMinute / maxSpeed) * 100, 3) : 0;
+            const tooltipLabel = formatBookSpeedTooltip(day);
+            const shouldShowLabel = shouldShowBookSpeedDayLabel(
+              day,
+              index,
+              visibleDays.length,
+            );
+
+            return (
+              <div
+                className={`reading-chart-day${shouldShowLabel ? " has-visible-label" : ""}`}
+                key={day.date}
+              >
+                <button
+                  className={`reading-chart-bar-track${
+                    activeDate === day.date ? " is-active" : ""
+                  }`}
+                  type="button"
+                  aria-label={`${formatChartDateLabel(day.date)}: ${tooltipLabel}`}
+                  onClick={() =>
+                    setActiveDate((currentDate) =>
+                      currentDate === day.date ? null : day.date,
+                    )
+                  }
+                  onBlur={() => setActiveDate(null)}
+                >
+                  <div
+                    className="reading-chart-bar"
+                    style={{ height: `${height}%` }}
+                    aria-hidden="true"
+                  />
+                  <span className="reading-chart-tooltip" role="tooltip">
+                    {tooltipLabel}
+                  </span>
+                </button>
+                <span aria-hidden={!shouldShowLabel}>{formatChartTickLabel(day.date)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+});
+
+const BookLookupChart = memo(function BookLookupChart({ days }: { days: LookupStatsDay[] }) {
+  const [activeDate, setActiveDate] = useState<string | null>(null);
+  const visibleDays = useMemo(() => getVisibleBookLookupDays(days), [days]);
+  const maxLookups = useMemo(
+    () => Math.max(...visibleDays.map((day) => day.lookupCount), 0),
+    [visibleDays],
+  );
+
+  return (
+    <>
+      <div className="book-chart-caption">Lookups by day</div>
+      <div
+        className="reading-chart book-lookups-chart"
+        role="group"
+        aria-label="Book lookups by day"
+      >
+        <div className="reading-chart-axis" aria-hidden="true">
+          <span>{formatLookupAxisCount(maxLookups)}</span>
+          <span>{formatLookupAxisCount(Math.ceil(maxLookups / 2))}</span>
+          <span>0</span>
+        </div>
+        <div
+          className="reading-chart-bars"
+          style={{ "--reading-chart-days": visibleDays.length } as CSSProperties}
+        >
+          {visibleDays.map((day, index) => {
+            const height =
+              maxLookups > 0 ? Math.max((day.lookupCount / maxLookups) * 100, 3) : 0;
+            const tooltipLabel = formatLookupCount(day.lookupCount);
+            const shouldShowLabel = shouldShowBookLookupDayLabel(
+              day,
+              index,
+              visibleDays.length,
+            );
+
+            return (
+              <div
+                className={`reading-chart-day${shouldShowLabel ? " has-visible-label" : ""}`}
+                key={day.date}
+              >
+                <button
+                  className={`reading-chart-bar-track${
+                    activeDate === day.date ? " is-active" : ""
+                  }`}
+                  type="button"
+                  aria-label={`${formatChartDateLabel(day.date)}: ${tooltipLabel}`}
+                  onClick={() =>
+                    setActiveDate((currentDate) =>
+                      currentDate === day.date ? null : day.date,
+                    )
+                  }
+                  onBlur={() => setActiveDate(null)}
+                >
+                  <div
+                    className="reading-chart-bar"
+                    style={{ height: `${height}%` }}
+                    aria-hidden="true"
+                  />
+                  <span className="reading-chart-tooltip" role="tooltip">
+                    {tooltipLabel}
+                  </span>
+                </button>
+                <span aria-hidden={!shouldShowLabel}>{formatChartTickLabel(day.date)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+});
+
+const ReadingTimeChart = memo(function ReadingTimeChart({ days }: { days: ReadingStatsDay[] }) {
+  const [activeDate, setActiveDate] = useState<string | null>(null);
+  const visibleDays = useMemo(() => getVisibleChartDays(days), [days]);
+  const maxDurationMs = useMemo(
+    () => Math.max(...visibleDays.map((day) => day.durationMs), 0),
+    [visibleDays],
+  );
+
+  return (
+    <div
+      className="reading-chart"
+      role="group"
+      aria-label="Daily reading time for the last month"
+    >
+      <div className="reading-chart-axis" aria-hidden="true">
+        <span>{formatReadingDuration(maxDurationMs)}</span>
+        <span>{formatReadingDuration(maxDurationMs / 2)}</span>
+        <span>0m</span>
+      </div>
+      <div
+        className="reading-chart-bars"
+        style={{ "--reading-chart-days": visibleDays.length } as CSSProperties}
+      >
+        {visibleDays.map((day, index) => {
+          const height =
+            maxDurationMs > 0 ? Math.max((day.durationMs / maxDurationMs) * 100, 3) : 0;
+          const tooltipLabel = formatReadingMinutes(day.durationMs);
+          const shouldShowLabel = shouldShowChartDayLabel(day, index, visibleDays.length);
+
+          return (
+            <div
+              className={`reading-chart-day${shouldShowLabel ? " has-visible-label" : ""}`}
+              key={day.date}
+            >
+              <button
+                className={`reading-chart-bar-track${
+                  activeDate === day.date ? " is-active" : ""
+                }`}
+                type="button"
+                aria-label={`${formatChartDateLabel(day.date)}: ${tooltipLabel}`}
+                onClick={() =>
+                  setActiveDate((currentDate) =>
+                    currentDate === day.date ? null : day.date,
+                  )
+                }
+                onBlur={() => setActiveDate(null)}
+              >
+                <div
+                  className="reading-chart-bar"
+                  style={{ height: `${height}%` }}
+                  aria-hidden="true"
+                />
+                <span className="reading-chart-tooltip" role="tooltip">
+                  {tooltipLabel}
+                </span>
+              </button>
+              <span aria-hidden={!shouldShowLabel}>{formatChartTickLabel(day.date)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
 
 function StatTile({ value, label }: { value: string; label: string }) {
   return (
@@ -507,10 +539,7 @@ function formatLastRead(lastReadAt: string | null) {
     return "Last read yesterday";
   }
 
-  return `Last read ${new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(lastReadDate)}`;
+  return `Last read ${lastReadDateFormatter.format(lastReadDate)}`;
 }
 
 function getLocalDate(dateValue: string) {
@@ -523,11 +552,7 @@ function startOfLocalDay(date: Date) {
 }
 
 function formatChartDateLabel(dateKey: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(getLocalDateFromKey(dateKey));
+  return chartDateFormatter.format(getLocalDateFromKey(dateKey));
 }
 
 function formatChartTickLabel(dateKey: string) {
