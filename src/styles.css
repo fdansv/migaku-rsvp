@@ -564,6 +564,7 @@ body :is(
   position: relative;
   z-index: 1;
   width: min(88vw, 720px);
+  max-width: 100%;
   min-height: calc(var(--reader-font-size) * 1.25);
   overflow: hidden;
   border-radius: 8px;
@@ -768,15 +769,20 @@ body :is(
 
 .rsvp-token-display::before,
 .rsvp-token-display::after {
+  box-sizing: border-box;
   position: absolute;
   right: 0;
   left: 0;
   z-index: 1;
   opacity: 0;
   color: color-mix(in srgb, var(--text) 72%, transparent);
+  font-size: min(0.72em, 52px);
+  line-height: 1.2;
   pointer-events: none;
   white-space: normal;
-  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow-wrap: break-word;
+  text-align: center;
   transition: opacity 180ms ease;
 }
 

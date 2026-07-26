@@ -1586,6 +1586,7 @@ test("wraps stopped hover sentence context without moving the active token", asy
   const epubPath = path.join(testInfo.outputDir, "hover-wrap.epub");
   await createSmallEpub(epubPath, [longSentence]);
 
+  await page.setViewportSize({ width: 872, height: 616 });
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -1606,6 +1607,7 @@ test("wraps stopped hover sentence context without moving the active token", asy
   await expectActiveTokenCentered(page);
   await expectContextOverlayAroundActiveStep(page);
   await expectStoppedHoverContextOverlayReady(page);
+  await expectContextOverlayFitsReaderStage(page);
 });
 
 test("scales long active text to stay inside the mobile viewport", async ({ page }, testInfo) => {
@@ -2208,6 +2210,42 @@ async function expectContextOverlayAroundActiveStep(page: Page) {
       }),
     )
     .toEqual({ beforeVisible: true, afterVisible: true });
+}
+
+async function expectContextOverlayFitsReaderStage(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display").evaluate((display) => {
+        const stage = display.closest<HTMLElement>(".reader-stage");
+        const reader = display.closest<HTMLElement>(".reader");
+        const transport = reader?.querySelector<HTMLElement>(".transport");
+        if (!stage || !transport) {
+          return null;
+        }
+
+        const displayRect = display.getBoundingClientRect();
+        const stageRect = stage.getBoundingClientRect();
+        const transportRect = transport.getBoundingClientRect();
+        const before = getComputedStyle(display, "::before");
+        const after = getComputedStyle(display, "::after");
+        const beforeTop = displayRect.top + Number.parseFloat(before.top);
+        const afterBottom =
+          displayRect.top + Number.parseFloat(after.top) + Number.parseFloat(after.height);
+
+        return {
+          displayFitsStage:
+            displayRect.left >= stageRect.left - 1 &&
+            displayRect.right <= stageRect.right + 1,
+          beforeFitsStage: beforeTop >= stageRect.top - 1,
+          afterClearsTransport: afterBottom <= transportRect.top - 8,
+        };
+      }),
+    )
+    .toEqual({
+      displayFitsStage: true,
+      beforeFitsStage: true,
+      afterClearsTransport: true,
+    });
 }
 
 async function expectRsvpTokensHaveNoTransition(page: Page) {
