@@ -1581,6 +1581,112 @@ test("keeps Migaku lookup cards from shrinking the mobile reader after word taps
     .toBe(true);
 });
 
+test("keeps injected Migaku glyphs and status underlines centered in the RSVP box", async ({
+  page,
+}, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "migaku-glyph-alignment.epub");
+  await createSmallEpub(epubPath, ["读累了记得休息一会哦~"]);
+
+  await page.setViewportSize({ width: 872, height: 416 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+
+  await expectRsvpDisplayText(page, "读");
+  await activeRsvpToken(page).evaluate((element) => {
+    const text = element.querySelector(".rsvp-display-token-text");
+    if (!text) {
+      throw new Error("Missing RSVP token text");
+    }
+
+    text.innerHTML = `
+      <span class="migaku-token -mgk-no-readings rsvp-migaku-token rsvp-active-token">
+        <span class="migaku-fragment -mgk-content">
+          <span class="migaku-surface">读</span>
+          <span class="migaku-spacer" aria-hidden="true">\u200b</span>
+        </span>
+      </span>
+    `;
+
+    const style = document.createElement("style");
+    style.textContent = `
+      .rsvp-migaku-token {
+        position: relative;
+        margin: 5px 0;
+        vertical-align: text-bottom;
+      }
+      .rsvp-migaku-token > .migaku-fragment {
+        position: relative;
+      }
+      .rsvp-migaku-token .migaku-surface {
+        width: 100%;
+        padding: 1px 0;
+      }
+    `;
+    document.head.append(style);
+  });
+
+  await expect
+    .poll(() =>
+      page.locator(".rsvp-token-display").evaluate((display) => {
+        const token = display.querySelector<HTMLElement>('[data-rsvp-visible-token="true"]');
+        const nestedToken = token?.querySelector<HTMLElement>(".rsvp-migaku-token");
+        const fragment = token?.querySelector<HTMLElement>(".migaku-fragment");
+        const surface = token?.querySelector<HTMLElement>(".migaku-surface");
+        if (!token || !nestedToken || !fragment || !surface) {
+          return null;
+        }
+
+        const displayRect = display.getBoundingClientRect();
+        const tokenRect = token.getBoundingClientRect();
+        const surfaceRect = surface.getBoundingClientRect();
+        const underline = getComputedStyle(token, "::after");
+        const underlineBottom = tokenRect.bottom - Number.parseFloat(underline.bottom);
+        const underlineTop = underlineBottom - Number.parseFloat(underline.height);
+        const nestedTokenStyle = getComputedStyle(nestedToken);
+        const fragmentStyle = getComputedStyle(fragment);
+        const surfaceStyle = getComputedStyle(surface);
+
+        const glyphHorizontalOffset =
+          surfaceRect.left +
+          surfaceRect.width / 2 -
+          (displayRect.left + displayRect.width / 2);
+        const glyphVerticalOffset =
+          surfaceRect.top +
+          surfaceRect.height / 2 -
+          (displayRect.top + displayRect.height / 2);
+
+        return {
+          glyphCenteredHorizontally: Math.abs(glyphHorizontalOffset) <= 1,
+          glyphCenteredVertically: Math.abs(glyphVerticalOffset) <= 1,
+          nestedMargin: nestedTokenStyle.margin,
+          nestedPosition: nestedTokenStyle.position,
+          nestedVerticalAlign: nestedTokenStyle.verticalAlign,
+          fragmentPosition: fragmentStyle.position,
+          surfacePadding: surfaceStyle.padding,
+          surfaceWidth: surfaceStyle.width,
+          underlineInside:
+            underlineTop >= displayRect.top - 1 && underlineBottom <= displayRect.bottom + 1,
+        };
+      }),
+    )
+    .toEqual({
+      glyphCenteredHorizontally: true,
+      glyphCenteredVertically: true,
+      nestedMargin: "0px",
+      nestedPosition: "static",
+      nestedVerticalAlign: "baseline",
+      fragmentPosition: "static",
+      surfacePadding: "0px",
+      surfaceWidth: "auto",
+      underlineInside: true,
+    });
+});
+
 test("wraps stopped hover sentence context without moving the active token", async ({
   page,
 }, testInfo) => {
