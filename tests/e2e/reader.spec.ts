@@ -1533,7 +1533,10 @@ test("keeps Migaku lookup cards from shrinking the mobile reader after word taps
   });
 
   await expect(page.locator(".migaku-pill")).toContainText("parsed");
+  await page.locator(".rsvp-token-display").hover();
+  await expectContextSentenceVisible(page);
   await activeRsvpToken(page).click();
+  await expectContextSentenceHidden(page);
   const widthBeforeLookupCard = await page.evaluate(() => document.documentElement.scrollWidth);
   await activeRsvpToken(page).evaluate((element) => {
     const card = document.createElement("div");

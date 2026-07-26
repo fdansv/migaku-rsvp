@@ -271,6 +271,7 @@ export function ReaderPane({
       return;
     }
 
+    setSentenceContextHovered(false);
     onMigakuLookup({
       term,
       status: getLookupStatusFromElement(token),
