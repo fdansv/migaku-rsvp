@@ -45,7 +45,16 @@ describe("StatsPanel", () => {
           charactersPerMinute: 500,
         },
       ],
-      bookLookupDays: [{ date: "2026-07-24", label: "Fri", lookupCount: 0 }],
+      bookLookupDays: [
+        {
+          date: "2026-07-24",
+          label: "Fri",
+          lookupCount: 0,
+          characterCount: 500,
+          lookupsPerThousandCharacters: 0,
+          charactersPerLookup: null,
+        },
+      ],
       progressPercent: 42,
     };
     const { rerender } = render(<StatsPanel {...props} />);

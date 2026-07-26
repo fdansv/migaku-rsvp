@@ -10,7 +10,7 @@ import { useFileDrop } from "./hooks/useFileDrop";
 import { useMigakuAdapter } from "./lib/migakuAdapter";
 import {
   estimateRemainingReadingTime,
-  getBookLookupDays,
+  getBookLookupRateDays,
   getBookLookupStats,
   getBookProgressDays,
   getBookReadingStats,
@@ -315,8 +315,14 @@ export function App() {
   );
   const bookProgressDays = useMemo(
     () =>
-      getBookProgressDays(readingSessions, selectedBookId, new Date(), READING_STATS_DAY_COUNT),
-    [readingSessions, selectedBookId],
+      getBookProgressDays(
+        readingSessions,
+        selectedBookId,
+        new Date(),
+        READING_STATS_DAY_COUNT,
+        getCurrentProgressPercent(progress),
+      ),
+    [progress, readingSessions, selectedBookId],
   );
   const bookSpeedDays = useMemo(
     () => getBookSpeedDays(readingSessions, selectedBookId, new Date(), READING_STATS_DAY_COUNT),
@@ -327,8 +333,15 @@ export function App() {
     [lookupEvents, selectedBookId],
   );
   const bookLookupDays = useMemo(
-    () => getBookLookupDays(lookupEvents, selectedBookId, new Date(), READING_STATS_DAY_COUNT),
-    [lookupEvents, selectedBookId],
+    () =>
+      getBookLookupRateDays(
+        readingSessions,
+        lookupEvents,
+        selectedBookId,
+        new Date(),
+        READING_STATS_DAY_COUNT,
+      ),
+    [lookupEvents, readingSessions, selectedBookId],
   );
   const remainingReadingTimeEstimate = useMemo(
     () =>
@@ -1281,6 +1294,15 @@ function compareReadingSessions(left: ReadingSession, right: ReadingSession) {
 
 function compareLookupEvents(left: LookupEvent, right: LookupEvent) {
   return left.occurredAt.localeCompare(right.occurredAt) || left.id.localeCompare(right.id);
+}
+
+function getCurrentProgressPercent(progress: { current: number; total: number }) {
+  if (progress.total <= 0) {
+    return 0;
+  }
+
+  const completedBeforeCurrentStep = Math.max(0, progress.current - 1);
+  return (completedBeforeCurrentStep / progress.total) * 100;
 }
 
 function getReadingSessionLocation(

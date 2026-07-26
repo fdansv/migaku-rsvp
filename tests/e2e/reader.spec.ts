@@ -685,8 +685,8 @@ test("loads server reading stats and migrates local reading sessions", async ({
     .toHaveText("600");
   await expect(page.locator(".book-stats-grid span", { hasText: "Time read" }).locator("strong"))
     .toHaveText("21m");
-  await expect(page.locator(".book-stats-grid span", { hasText: "Pace" }).locator("strong"))
-    .toHaveText("29/min");
+  await expect(page.locator(".book-stats-grid span", { hasText: "3d pace" }).locator("strong"))
+    .toHaveText("35/min");
   await expect(page.locator(".book-stats-grid span", { hasText: "Lookups" }).locator("strong"))
     .toHaveText("3");
   await expect(page.locator(".book-stats-meta")).toContainText("616 characters");
@@ -722,7 +722,8 @@ test("loads server reading stats and migrates local reading sessions", async ({
   const latestBookLookupsBar = bookLookupsChart.locator(".reading-chart-bar-track").last();
   const latestBookLookupsTooltip = bookLookupsChart.locator(".reading-chart-tooltip").last();
   await latestBookLookupsBar.hover();
-  await expect(latestBookLookupsTooltip).toHaveText("2 lookups");
+  await expect(latestBookLookupsTooltip)
+    .toHaveText("3.3/1k chars, 300 chars/lookup, 2 lookups, 600 chars");
   await expect(latestBookLookupsTooltip).toBeVisible();
   await expect.poll(() => migratedSessions).toContainEqual(localSession);
   await expect.poll(() => migratedLookupEvents).toContainEqual(localLookupEvent);

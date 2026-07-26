@@ -20,6 +20,15 @@ export interface LookupStatsDay {
   lookupCount: number;
 }
 
+export interface BookLookupRateDay {
+  date: string;
+  label: string;
+  lookupCount: number;
+  characterCount: number;
+  lookupsPerThousandCharacters: number;
+  charactersPerLookup: number | null;
+}
+
 export interface BookReadingStats {
   totalDurationMs: number;
   wordCount: number;
@@ -234,6 +243,19 @@ export function getBookSpeedDays(
   });
 }
 
+export function getRecentBookReadingRate(days: BookSpeedDay[], dayCount = 3) {
+  const safeDayCount = Math.max(1, Math.round(dayCount));
+  const recentDays = days.slice(-safeDayCount);
+  const durationMs = recentDays.reduce((sum, day) => sum + getNonNegativeNumber(day.durationMs), 0);
+  const characterCount = recentDays.reduce(
+    (sum, day) => sum + getNonNegativeNumber(day.characterCount),
+    0,
+  );
+  const minutes = durationMs / 60_000;
+
+  return minutes > 0 ? characterCount / minutes : 0;
+}
+
 export function getDailyLookupStats(
   events: LookupEvent[],
   referenceDate = new Date(),
@@ -328,11 +350,47 @@ export function getBookLookupDays(
   );
 }
 
+export function getBookLookupRateDays(
+  sessions: ReadingSession[],
+  events: LookupEvent[],
+  bookId: string | null | undefined,
+  referenceDate = new Date(),
+  dayCount = 7,
+): BookLookupRateDay[] {
+  if (!bookId) {
+    return [];
+  }
+
+  const bookSessions = sessions.filter((session) => session.bookId === bookId);
+  const bookEvents = events.filter((event) => event.bookId === bookId);
+  const readingDays = getDailyReadingStats(bookSessions, referenceDate, dayCount);
+  const lookupDays = getDailyLookupStats(bookEvents, referenceDate, dayCount);
+  const lookupsByDate = new Map(lookupDays.map((day) => [day.date, day.lookupCount]));
+
+  return readingDays.map((day) => {
+    const lookupCount = lookupsByDate.get(day.date) ?? 0;
+    const characterCount = day.characterCount;
+    const charactersPerLookup =
+      lookupCount > 0 && characterCount > 0 ? characterCount / lookupCount : null;
+
+    return {
+      date: day.date,
+      label: day.label,
+      lookupCount,
+      characterCount,
+      lookupsPerThousandCharacters:
+        characterCount > 0 ? (lookupCount / characterCount) * 1_000 : 0,
+      charactersPerLookup,
+    };
+  });
+}
+
 export function getBookProgressDays(
   sessions: ReadingSession[],
   bookId: string | null | undefined,
   referenceDate = new Date(),
   dayCount = 7,
+  currentProgressPercent?: number,
 ): BookProgressDay[] {
   if (!bookId) {
     return [];
@@ -397,7 +455,7 @@ export function getBookProgressDays(
   }
 
   let cumulativePercent = cumulativeBeforeRange;
-  return days.map((day) => {
+  const progressDays = days.map((day) => {
     cumulativePercent += day.dailyPercent;
 
     return {
@@ -406,6 +464,9 @@ export function getBookProgressDays(
       cumulativePercent: roundProgressPercent(cumulativePercent),
     };
   });
+
+  reconcileCurrentProgress(progressDays, currentProgressPercent);
+  return progressDays;
 }
 
 export function estimateRemainingReadingTime(
@@ -561,6 +622,32 @@ function getLocationProgressPercent(current: number, total: number) {
   }
 
   return (Math.min(Math.max(0, current), total) / total) * 100;
+}
+
+function reconcileCurrentProgress(
+  days: BookProgressDay[],
+  currentProgressPercent: number | undefined,
+) {
+  const currentPercent = getProgressPercentValue(currentProgressPercent);
+  const today = days.at(-1);
+  if (currentPercent === null || !today || currentPercent <= today.cumulativePercent) {
+    return;
+  }
+
+  const untrackedPercent = currentPercent - today.cumulativePercent;
+  days[days.length - 1] = {
+    ...today,
+    dailyPercent: roundProgressPercent(today.dailyPercent + untrackedPercent),
+    cumulativePercent: roundProgressPercent(currentPercent),
+  };
+}
+
+function getProgressPercentValue(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  return roundProgressPercent(value ?? 0);
 }
 
 function roundProgressPercent(percent: number) {

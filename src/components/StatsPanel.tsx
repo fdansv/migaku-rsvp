@@ -2,11 +2,12 @@ import { BarChart3, BookOpen } from "lucide-react";
 import { memo, useMemo, useState, type CSSProperties } from "react";
 import {
   formatReadingDuration,
+  getRecentBookReadingRate,
   type BookLookupStats,
+  type BookLookupRateDay,
   type BookProgressDay,
   type BookReadingStats,
   type BookSpeedDay,
-  type LookupStatsDay,
   type ReadingStatsDay,
 } from "../lib/readingStats";
 
@@ -26,7 +27,7 @@ interface StatsPanelProps {
   bookLookupStats: BookLookupStats | null;
   bookProgressDays: BookProgressDay[];
   bookSpeedDays: BookSpeedDay[];
-  bookLookupDays: LookupStatsDay[];
+  bookLookupDays: BookLookupRateDay[];
   progressPercent: number | null;
 }
 
@@ -41,6 +42,10 @@ export function StatsPanel({
 }: StatsPanelProps) {
   const today = days.at(-1);
   const hasBookStats = Boolean(bookStats || bookLookupStats);
+  const recentBookPace = useMemo(
+    () => getRecentBookReadingRate(bookSpeedDays, 3),
+    [bookSpeedDays],
+  );
 
   return (
     <section className="stats-section" aria-labelledby="reading-stats-title">
@@ -70,7 +75,7 @@ export function StatsPanel({
               label="Time read"
             />
             <StatTile value={formatProgressPercent(progressPercent)} label="Progress" />
-            <StatTile value={formatReadingRate(bookStats?.charactersPerMinute ?? 0)} label="Pace" />
+            <StatTile value={formatReadingRate(recentBookPace)} label="3d pace" />
             <StatTile value={(bookStats?.activeDayCount ?? 0).toLocaleString()} label="Days" />
             <StatTile value={(bookLookupStats?.lookupCount ?? 0).toLocaleString()} label="Lookups" />
           </div>
@@ -234,26 +239,26 @@ const BookSpeedChart = memo(function BookSpeedChart({ days }: { days: BookSpeedD
   );
 });
 
-const BookLookupChart = memo(function BookLookupChart({ days }: { days: LookupStatsDay[] }) {
+const BookLookupChart = memo(function BookLookupChart({ days }: { days: BookLookupRateDay[] }) {
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const visibleDays = useMemo(() => getVisibleBookLookupDays(days), [days]);
-  const maxLookups = useMemo(
-    () => Math.max(...visibleDays.map((day) => day.lookupCount), 0),
+  const maxLookupRate = useMemo(
+    () => Math.max(...visibleDays.map((day) => day.lookupsPerThousandCharacters), 0),
     [visibleDays],
   );
 
   return (
     <>
-      <div className="book-chart-caption">Lookups by day</div>
+      <div className="book-chart-caption">Lookup rate by day</div>
       <div
         className="reading-chart book-lookups-chart"
         role="group"
-        aria-label="Book lookups by day"
+        aria-label="Book lookup rate by day"
       >
         <div className="reading-chart-axis" aria-hidden="true">
-          <span>{formatLookupAxisCount(maxLookups)}</span>
-          <span>{formatLookupAxisCount(Math.ceil(maxLookups / 2))}</span>
-          <span>0</span>
+          <span>{formatLookupRateAxis(maxLookupRate)}</span>
+          <span>{formatLookupRateAxis(maxLookupRate / 2)}</span>
+          <span>0/1k</span>
         </div>
         <div
           className="reading-chart-bars"
@@ -261,8 +266,10 @@ const BookLookupChart = memo(function BookLookupChart({ days }: { days: LookupSt
         >
           {visibleDays.map((day, index) => {
             const height =
-              maxLookups > 0 ? Math.max((day.lookupCount / maxLookups) * 100, 3) : 0;
-            const tooltipLabel = formatLookupCount(day.lookupCount);
+              maxLookupRate > 0
+                ? Math.max((day.lookupsPerThousandCharacters / maxLookupRate) * 100, 3)
+                : 0;
+            const tooltipLabel = formatLookupRateTooltip(day);
             const shouldShowLabel = shouldShowBookLookupDayLabel(
               day,
               index,
@@ -411,10 +418,12 @@ function getVisibleBookSpeedDays(days: BookSpeedDay[]) {
   return days.slice(-1);
 }
 
-function getVisibleBookLookupDays(days: LookupStatsDay[]) {
-  const firstDayWithLookupsIndex = days.findIndex((day) => day.lookupCount > 0);
-  if (firstDayWithLookupsIndex >= 0) {
-    return days.slice(firstDayWithLookupsIndex);
+function getVisibleBookLookupDays(days: BookLookupRateDay[]) {
+  const firstDayWithLookupDataIndex = days.findIndex(
+    (day) => day.lookupCount > 0 || day.characterCount > 0,
+  );
+  if (firstDayWithLookupDataIndex >= 0) {
+    return days.slice(firstDayWithLookupDataIndex);
   }
 
   return days.slice(-1);
@@ -444,12 +453,18 @@ function shouldShowBookSpeedDayLabel(day: BookSpeedDay, index: number, dayCount:
   return index === 0 || index === dayCount - 1 || day.durationMs > 0 || index % 7 === 0;
 }
 
-function shouldShowBookLookupDayLabel(day: LookupStatsDay, index: number, dayCount: number) {
+function shouldShowBookLookupDayLabel(day: BookLookupRateDay, index: number, dayCount: number) {
   if (dayCount <= 14) {
     return true;
   }
 
-  return index === 0 || index === dayCount - 1 || day.lookupCount > 0 || index % 7 === 0;
+  return (
+    index === 0 ||
+    index === dayCount - 1 ||
+    day.lookupCount > 0 ||
+    day.characterCount > 0 ||
+    index % 7 === 0
+  );
 }
 
 function formatReadingMinutes(durationMs: number) {
@@ -481,12 +496,36 @@ function formatReadingRate(charactersPerMinute: number) {
   return `${Math.max(1, Math.round(charactersPerMinute)).toLocaleString()}/min`;
 }
 
-function formatLookupCount(lookupCount: number) {
-  return `${lookupCount.toLocaleString()} ${lookupCount === 1 ? "lookup" : "lookups"}`;
+function formatCompactNumber(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0";
+  }
+
+  if (value < 10) {
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1);
+  }
+
+  return Math.round(value).toLocaleString();
 }
 
-function formatLookupAxisCount(lookupCount: number) {
-  return Math.max(0, lookupCount).toLocaleString();
+function formatLookupRateAxis(lookupsPerThousandCharacters: number) {
+  const value = formatCompactNumber(lookupsPerThousandCharacters);
+  return `${value}/1k`;
+}
+
+function formatLookupRateTooltip(day: BookLookupRateDay) {
+  const rate = formatCompactNumber(day.lookupsPerThousandCharacters);
+  const lookupLabel = `${day.lookupCount.toLocaleString()} ${
+    day.lookupCount === 1 ? "lookup" : "lookups"
+  }`;
+  const characterLabel = `${day.characterCount.toLocaleString()} chars`;
+  const inverseLabel =
+    day.charactersPerLookup === null
+      ? "no chars/lookup"
+      : `${formatCompactNumber(day.charactersPerLookup)} chars/lookup`;
+
+  return `${rate}/1k chars, ${inverseLabel}, ${lookupLabel}, ${characterLabel}`;
 }
 
 function formatBookProgressTooltip(day: BookProgressDay) {

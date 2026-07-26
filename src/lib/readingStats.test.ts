@@ -5,6 +5,7 @@ import {
   estimateRemainingReadingTime,
   formatReadingDuration,
   getBookLookupDays,
+  getBookLookupRateDays,
   getBookLookupStats,
   getBookProgressDays,
   getBookReadingStats,
@@ -12,6 +13,7 @@ import {
   getDailyLookupStats,
   getDailyReadingStats,
   getReadingStepStats,
+  getRecentBookReadingRate,
 } from "./readingStats";
 
 const sentence = createSentence("猫が走る。", "chapter:0", 0, 0, 0) as Sentence;
@@ -165,6 +167,36 @@ describe("reading stats", () => {
     ]);
   });
 
+  it("reconciles cumulative book progress with the current saved position", () => {
+    const sessions: ReadingSession[] = [
+      {
+        id: "tracked-session",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 10, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 10,
+        characterCount: 40,
+        startLocation: createLocation(0, 100),
+        endLocation: createLocation(25, 100),
+      },
+    ];
+
+    expect(
+      getBookProgressDays(sessions, "book:1", new Date(2026, 0, 12, 12), 3, 32).map(
+        (day) => ({
+          date: day.date,
+          dailyPercent: day.dailyPercent,
+          cumulativePercent: day.cumulativePercent,
+        }),
+      ),
+    ).toEqual([
+      { date: "2026-01-10", dailyPercent: 25, cumulativePercent: 25 },
+      { date: "2026-01-11", dailyPercent: 0, cumulativePercent: 25 },
+      { date: "2026-01-12", dailyPercent: 7, cumulativePercent: 32 },
+    ]);
+  });
+
   it("calculates selected-book reading speed by day", () => {
     const sessions: ReadingSession[] = [
       {
@@ -200,6 +232,40 @@ describe("reading stats", () => {
           charactersPerMinute: 30,
         },
       ]);
+  });
+
+  it("averages selected-book pace across the last three days", () => {
+    expect(
+      getRecentBookReadingRate(
+        [
+          {
+            date: "2026-01-07",
+            durationMs: 10 * 60_000,
+            characterCount: 1_000,
+            charactersPerMinute: 100,
+          },
+          {
+            date: "2026-01-08",
+            durationMs: 10 * 60_000,
+            characterCount: 2_000,
+            charactersPerMinute: 200,
+          },
+          {
+            date: "2026-01-09",
+            durationMs: 0,
+            characterCount: 0,
+            charactersPerMinute: 0,
+          },
+          {
+            date: "2026-01-10",
+            durationMs: 20 * 60_000,
+            characterCount: 2_000,
+            charactersPerMinute: 100,
+          },
+        ],
+        3,
+      ),
+    ).toBeCloseTo(4000 / 30);
   });
 
   it("aggregates lookup events into local days", () => {
@@ -265,6 +331,65 @@ describe("reading stats", () => {
       { date: "2026-01-10", lookupCount: 1 },
       { date: "2026-01-11", lookupCount: 1 },
     ]);
+  });
+
+  it("normalizes selected-book lookups by daily read characters", () => {
+    const sessions: ReadingSession[] = [
+      {
+        id: "day-one",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 10, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 40,
+        characterCount: 600,
+        startLocation: createLocation(0, 100),
+        endLocation: createLocation(1, 100),
+      },
+      {
+        id: "other-book",
+        bookId: "book:2",
+        startedAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 10, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 40,
+        characterCount: 600,
+        startLocation: createLocation(0, 100),
+        endLocation: createLocation(1, 100),
+      },
+    ];
+    const events: LookupEvent[] = [
+      {
+        id: "first",
+        bookId: "book:1",
+        occurredAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        term: "猫",
+      },
+      {
+        id: "second",
+        bookId: "book:1",
+        occurredAt: new Date(2026, 0, 10, 9, 5).toISOString(),
+        term: "走る",
+      },
+    ];
+
+    expect(getBookLookupRateDays(sessions, events, "book:1", new Date(2026, 0, 11, 12), 2))
+      .toMatchObject([
+        {
+          date: "2026-01-10",
+          lookupCount: 2,
+          characterCount: 600,
+          lookupsPerThousandCharacters: 2 / 0.6,
+          charactersPerLookup: 300,
+        },
+        {
+          date: "2026-01-11",
+          lookupCount: 0,
+          characterCount: 0,
+          lookupsPerThousandCharacters: 0,
+          charactersPerLookup: null,
+        },
+      ]);
   });
 
   it("estimates remaining book time from matching progress-location spans", () => {
