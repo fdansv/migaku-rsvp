@@ -565,7 +565,7 @@ body :is(
   z-index: 1;
   width: min(88vw, 720px);
   max-width: 100%;
-  min-height: calc(var(--reader-font-size) * 1.25);
+  min-height: calc(var(--reader-font-size) * 1.35);
   overflow: hidden;
   border-radius: 8px;
   background: transparent;
@@ -767,9 +767,9 @@ body :is(
   content: "";
   position: absolute;
   right: 0;
-  bottom: 0.02em;
+  bottom: -0.1em;
   left: 0;
-  height: 0.08em;
+  height: 0.06em;
   background: var(--rsvp-status-underline-color, transparent);
   opacity: var(--rsvp-status-underline-opacity, 0);
   pointer-events: none;
