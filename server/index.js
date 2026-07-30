@@ -590,7 +590,7 @@ function isReadingSession(value) {
     value.id.length > 0 &&
     typeof value.bookId === "string" &&
     value.bookId.length > 0 &&
-    (value.kind === undefined || value.kind === "progress") &&
+    (value.kind === undefined || value.kind === "progress" || value.kind === "baseline") &&
     isIsoDateString(value.startedAt) &&
     isIsoDateString(value.endedAt) &&
     Number.isFinite(value.durationMs) &&

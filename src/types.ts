@@ -61,7 +61,7 @@ export interface Book {
 export interface ReadingSession {
   id: string;
   bookId: string;
-  kind?: "progress";
+  kind?: "progress" | "baseline";
   startedAt: string;
   endedAt: string;
   durationMs: number;

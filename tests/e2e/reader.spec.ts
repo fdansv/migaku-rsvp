@@ -310,7 +310,7 @@ test("anchors legacy untracked progress once on the current day", async ({ page 
   await expect
     .poll(async () => {
       const checkpoints = (await loadStoredReadingSessions(page)).filter(
-        (session) => session.kind === "progress",
+        (session) => session.kind === "baseline",
       );
       return checkpoints.map((checkpoint) => ({
         start: checkpoint.startLocation?.progressCurrent,
@@ -325,7 +325,7 @@ test("anchors legacy untracked progress once on the current day", async ({ page 
   await expect
     .poll(async () => {
       const checkpoints = (await loadStoredReadingSessions(page)).filter(
-        (session) => session.kind === "progress",
+        (session) => session.kind === "baseline",
       );
       return checkpoints.length;
     })

@@ -213,7 +213,7 @@ describe("reading stats", () => {
       {
         id: "anchored-baseline",
         bookId: "book:1",
-        kind: "progress",
+        kind: "baseline",
         startedAt: new Date(2026, 0, 12, 12, 0).toISOString(),
         endedAt: new Date(2026, 0, 12, 12, 0).toISOString(),
         durationMs: 0,
@@ -227,11 +227,32 @@ describe("reading stats", () => {
     expect(
       getBookProgressDays(sessions, "book:1", new Date(2026, 0, 13, 12), 4, 32),
     ).toEqual([
-      { date: "2026-01-10", dailyPercent: 25, cumulativePercent: 25 },
-      { date: "2026-01-11", dailyPercent: 0, cumulativePercent: 25 },
-      { date: "2026-01-12", dailyPercent: 7, cumulativePercent: 32 },
+      { date: "2026-01-10", dailyPercent: 25, cumulativePercent: 32 },
+      { date: "2026-01-11", dailyPercent: 0, cumulativePercent: 32 },
+      { date: "2026-01-12", dailyPercent: 0, cumulativePercent: 32 },
       { date: "2026-01-13", dailyPercent: 0, cumulativePercent: 32 },
     ]);
+  });
+
+  it("treats an early progress-style baseline as non-daily progress", () => {
+    const baseline: ReadingSession = {
+      id: "early-baseline-format",
+      bookId: "book:1",
+      kind: "progress",
+      startedAt: new Date(2026, 0, 12, 12, 0).toISOString(),
+      endedAt: new Date(2026, 0, 12, 12, 0).toISOString(),
+      durationMs: 0,
+      wordCount: 0,
+      characterCount: 0,
+      startLocation: createLocation(250, 1_000),
+      endLocation: createLocation(320, 1_000),
+    };
+
+    expect(getBookProgressDays([baseline], "book:1", new Date(2026, 0, 13, 12), 2, 7))
+      .toEqual([
+        { date: "2026-01-12", dailyPercent: 0, cumulativePercent: 7 },
+        { date: "2026-01-13", dailyPercent: 0, cumulativePercent: 7 },
+      ]);
   });
 
   it("attributes manually synchronized progress to the day it was entered", () => {

@@ -179,7 +179,7 @@ export function getBookReadingStats(
   let lastReadMs = Number.NEGATIVE_INFINITY;
 
   for (const session of sessions) {
-    if (session.bookId !== bookId || session.kind === "progress") {
+    if (session.bookId !== bookId || session.kind !== undefined) {
       continue;
     }
 
@@ -421,6 +421,11 @@ export function getBookProgressDays(
     }
 
     const elapsedMs = bounds.endMs - bounds.startMs;
+    if (isProgressBaseline(session)) {
+      cumulativeBeforeRange += progressPercent;
+      continue;
+    }
+
     if (bounds.startMs >= rangeEndMs) {
       continue;
     }
@@ -630,6 +635,23 @@ function getSessionProgressPercent(session: ReadingSession) {
   }
 
   return Math.min(100, endPercent - startPercent);
+}
+
+function isProgressBaseline(session: ReadingSession) {
+  if (session.kind === "baseline") {
+    return true;
+  }
+
+  const start = session.startLocation;
+  const end = session.endLocation;
+  return (
+    session.kind === "progress" &&
+    start?.progressTotal === 1_000 &&
+    end?.progressTotal === 1_000 &&
+    start.position.sentenceIndex === end.position.sentenceIndex &&
+    start.position.tokenIndex === end.position.tokenIndex &&
+    start.position.characterOffset === end.position.characterOffset
+  );
 }
 
 function getLocationProgressPercent(current: number, total: number) {

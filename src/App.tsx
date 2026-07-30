@@ -378,7 +378,7 @@ export function App() {
     persistReadingSession({
       id: createProgressCheckpointId(),
       bookId: selectedBookId,
-      kind: "progress",
+      kind: "baseline",
       startedAt: new Date(nowMs).toISOString(),
       endedAt: new Date(nowMs).toISOString(),
       durationMs: 0,
