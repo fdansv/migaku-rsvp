@@ -197,6 +197,43 @@ describe("reading stats", () => {
     ]);
   });
 
+  it("keeps a reconciled progress baseline on the day it was anchored", () => {
+    const sessions: ReadingSession[] = [
+      {
+        id: "tracked-session",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 10, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 10,
+        characterCount: 40,
+        startLocation: createLocation(0, 100),
+        endLocation: createLocation(25, 100),
+      },
+      {
+        id: "anchored-baseline",
+        bookId: "book:1",
+        kind: "progress",
+        startedAt: new Date(2026, 0, 12, 12, 0).toISOString(),
+        endedAt: new Date(2026, 0, 12, 12, 0).toISOString(),
+        durationMs: 0,
+        wordCount: 0,
+        characterCount: 0,
+        startLocation: createLocation(250, 1_000),
+        endLocation: createLocation(320, 1_000),
+      },
+    ];
+
+    expect(
+      getBookProgressDays(sessions, "book:1", new Date(2026, 0, 13, 12), 4, 32),
+    ).toEqual([
+      { date: "2026-01-10", dailyPercent: 25, cumulativePercent: 25 },
+      { date: "2026-01-11", dailyPercent: 0, cumulativePercent: 25 },
+      { date: "2026-01-12", dailyPercent: 7, cumulativePercent: 32 },
+      { date: "2026-01-13", dailyPercent: 0, cumulativePercent: 32 },
+    ]);
+  });
+
   it("attributes manually synchronized progress to the day it was entered", () => {
     const sessions: ReadingSession[] = [
       {

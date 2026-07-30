@@ -281,6 +281,57 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).not.toHaveClass(/unknown/);
 });
 
+test("anchors legacy untracked progress once on the current day", async ({ page }, testInfo) => {
+  const epubPath = path.join(testInfo.outputDir, "legacy-progress.epub");
+  await createSmallEpub(epubPath);
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await indexedDB.deleteDatabase("migaku-rsvp");
+  });
+  await page.reload();
+  await page.locator('input[type="file"]').setInputFiles(epubPath);
+  await expect(page.locator(".rsvp-token-display")).toHaveText("猫が走る。", {
+    timeout: 30_000,
+  });
+
+  await page.getByRole("button", { name: /Jump to location/ }).click();
+  await page.getByRole("textbox", { name: "Location" }).fill("7");
+  await page.getByRole("textbox", { name: "Location" }).press("Enter");
+  await expectProgressCurrent(page, 7);
+  const progressTotal = Number(await page.locator("progress").getAttribute("max"));
+  const expectedBaselineEnd = Math.round(((7 - 1) / progressTotal) * 1_000);
+  await page.waitForTimeout(400);
+  await clearStoredReadingSessions(page);
+
+  await page.reload();
+  await expectProgressCurrent(page, 7);
+  await expect
+    .poll(async () => {
+      const checkpoints = (await loadStoredReadingSessions(page)).filter(
+        (session) => session.kind === "progress",
+      );
+      return checkpoints.map((checkpoint) => ({
+        start: checkpoint.startLocation?.progressCurrent,
+        end: checkpoint.endLocation?.progressCurrent,
+        total: checkpoint.endLocation?.progressTotal,
+      }));
+    })
+    .toEqual([{ start: 0, end: expectedBaselineEnd, total: 1_000 }]);
+
+  await page.reload();
+  await expectProgressCurrent(page, 7);
+  await expect
+    .poll(async () => {
+      const checkpoints = (await loadStoredReadingSessions(page)).filter(
+        (session) => session.kind === "progress",
+      );
+      return checkpoints.length;
+    })
+    .toBe(1);
+});
+
 test("answers follow-up questions from the recap panel", async ({ page }, testInfo) => {
   const epubPath = path.join(testInfo.outputDir, "recap-follow-up.epub");
   await createSmallEpub(epubPath);
@@ -2152,6 +2203,26 @@ async function loadStoredReadingSessions(page: Page) {
           getAllRequest.onerror = () => reject(getAllRequest.error);
           getAllRequest.onsuccess = () => resolve(getAllRequest.result);
           transaction.oncomplete = () => database.close();
+        };
+      }),
+  );
+}
+
+async function clearStoredReadingSessions(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("migaku-rsvp");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("readingSessions", "readwrite");
+          transaction.objectStore("readingSessions").clear();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
         };
       }),
   );

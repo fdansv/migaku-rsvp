@@ -78,6 +78,7 @@ const PLAYBACK_PROGRESS_SAVE_INTERVAL_MS = 5_000;
 const IDLE_PROGRESS_SAVE_DELAY_MS = 300;
 const SERVER_AI_API_URL = "/api/ai/chat";
 const MIN_READING_SESSION_MS = 100;
+const PROGRESS_PERCENT_SCALE = 1_000;
 const TRANSPORT_KEY_CODES = new Set([
   "Space",
   "ArrowRight",
@@ -154,7 +155,9 @@ export function App() {
   >({});
   const [readingSessions, setReadingSessions] = useState<ReadingSession[]>([]);
   const [lookupEvents, setLookupEvents] = useState<LookupEvent[]>([]);
+  const [statsStoresLoaded, setStatsStoresLoaded] = useState(false);
   const readingSessionsRef = useRef<ReadingSession[]>([]);
+  const pendingProgressBaselinesRef = useRef(new Set<string>());
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
   const playbackTimerRef = useRef<number | null>(null);
@@ -198,10 +201,14 @@ export function App() {
           readingSessionsRef.current = sessions;
           setReadingSessions(sessions);
           setLookupEvents(lookupEvents);
+          setStatsStoresLoaded(true);
         }
       })
       .catch((loadError) => {
         console.error(loadError);
+        if (!canceled) {
+          setStatsStoresLoaded(true);
+        }
       });
 
     return () => {
@@ -326,6 +333,66 @@ export function App() {
       ),
     [progress, readingSessions, selectedBookId],
   );
+  useEffect(() => {
+    const current = currentReadingLocationRef.current;
+    if (
+      !statsStoresLoaded ||
+      !selectedBookId ||
+      current?.bookId !== selectedBookId ||
+      progress.total <= 0
+    ) {
+      return;
+    }
+
+    const currentProgressPercent = getCurrentProgressPercent(progress);
+    const trackedProgressPercent =
+      getBookProgressDays(
+        readingSessions,
+        selectedBookId,
+        new Date(),
+        READING_STATS_DAY_COUNT,
+      ).at(-1)?.cumulativePercent ?? 0;
+    const startLocation = getProgressBaselineLocation(
+      current.location.position,
+      trackedProgressPercent,
+    );
+    const endLocation = getProgressBaselineLocation(
+      current.location.position,
+      currentProgressPercent,
+    );
+    if (!didReadingSessionAdvance(startLocation, endLocation)) {
+      return;
+    }
+
+    const baselineKey = [
+      selectedBookId,
+      startLocation.progressCurrent,
+      endLocation.progressCurrent,
+    ].join(":");
+    if (pendingProgressBaselinesRef.current.has(baselineKey)) {
+      return;
+    }
+    pendingProgressBaselinesRef.current.add(baselineKey);
+
+    const nowMs = Date.now();
+    persistReadingSession({
+      id: createProgressCheckpointId(),
+      bookId: selectedBookId,
+      kind: "progress",
+      startedAt: new Date(nowMs).toISOString(),
+      endedAt: new Date(nowMs).toISOString(),
+      durationMs: 0,
+      wordCount: 0,
+      characterCount: 0,
+      startLocation,
+      endLocation,
+    });
+  }, [
+    progress,
+    readingSessions,
+    selectedBookId,
+    statsStoresLoaded,
+  ]);
   const bookSpeedDays = useMemo(
     () => getBookSpeedDays(readingSessions, selectedBookId, new Date(), READING_STATS_DAY_COUNT),
     [readingSessions, selectedBookId],
@@ -1388,6 +1455,24 @@ function getCurrentProgressPercent(progress: { current: number; total: number })
 
   const completedBeforeCurrentStep = Math.max(0, progress.current - 1);
   return (completedBeforeCurrentStep / progress.total) * 100;
+}
+
+function getProgressBaselineLocation(
+  position: { sentenceIndex: number; tokenIndex: number; characterOffset?: number },
+  progressPercent: number,
+): ReadingSessionLocation {
+  return {
+    position: {
+      sentenceIndex: position.sentenceIndex,
+      tokenIndex: position.tokenIndex,
+      characterOffset: position.characterOffset,
+    },
+    progressCurrent: Math.max(
+      0,
+      Math.min(PROGRESS_PERCENT_SCALE, Math.round(progressPercent * 10)),
+    ),
+    progressTotal: PROGRESS_PERCENT_SCALE,
+  };
 }
 
 function getReadingSessionLocation(
