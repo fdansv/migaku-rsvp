@@ -154,6 +154,7 @@ export function App() {
   >({});
   const [readingSessions, setReadingSessions] = useState<ReadingSession[]>([]);
   const [lookupEvents, setLookupEvents] = useState<LookupEvent[]>([]);
+  const readingSessionsRef = useRef<ReadingSession[]>([]);
   const migakuRootRef = useRef<HTMLDivElement>(null);
   const rsvpDisplayRef = useRef<HTMLDivElement>(null);
   const playbackTimerRef = useRef<number | null>(null);
@@ -194,6 +195,7 @@ export function App() {
         if (!canceled) {
           serverReadingSessionsEnabledRef.current = serverReadingSessionsEnabled;
           serverLookupEventsEnabledRef.current = serverLookupEventsEnabled;
+          readingSessionsRef.current = sessions;
           setReadingSessions(sessions);
           setLookupEvents(lookupEvents);
         }
@@ -708,52 +710,64 @@ export function App() {
 
   function goNext() {
     setAutoPaused(false);
-    stopPlayback();
-    setPosition((previous) =>
-      advancePosition(previous, sentences, stepConfig, tokenGroupsBySentenceId),
+    const nowMs = finishSessionBeforeManualNavigation();
+    const nextPosition = advancePosition(
+      safePosition,
+      sentences,
+      stepConfig,
+      tokenGroupsBySentenceId,
     );
+    recordProgressCheckpoint(nextPosition, nowMs);
+    setPosition(nextPosition);
   }
 
   function goPrevious() {
     setAutoPaused(false);
-    stopPlayback();
-    setPosition((previous) =>
-      retreatPosition(previous, sentences, stepConfig, tokenGroupsBySentenceId),
-    );
+    finishSessionBeforeManualNavigation();
+    setPosition(retreatPosition(safePosition, sentences, stepConfig, tokenGroupsBySentenceId));
   }
 
   function goNextSentence() {
     setAutoPaused(false);
-    stopPlayback();
-    setPosition((previous) => advanceSentencePosition(previous, sentences, tokenGroupsBySentenceId));
+    const nowMs = finishSessionBeforeManualNavigation();
+    const nextPosition = advanceSentencePosition(
+      safePosition,
+      sentences,
+      tokenGroupsBySentenceId,
+    );
+    recordProgressCheckpoint(nextPosition, nowMs);
+    setPosition(nextPosition);
   }
 
   function goPreviousSentence() {
     setAutoPaused(false);
-    stopPlayback();
-    setPosition((previous) => retreatSentencePosition(previous, sentences, tokenGroupsBySentenceId));
+    finishSessionBeforeManualNavigation();
+    setPosition(retreatSentencePosition(safePosition, sentences, tokenGroupsBySentenceId));
   }
 
   function beginProgressJump() {
     setAutoPaused(false);
-    stopPlayback();
+    finishSessionBeforeManualNavigation();
   }
 
   function jumpToProgressLocation(location: number) {
     setAutoPaused(false);
-    stopPlayback();
-    setPosition(getPositionForProgressUnit(location, sentences, stepConfig));
+    const nowMs = finishSessionBeforeManualNavigation();
+    const nextPosition = getPositionForProgressUnit(location, sentences, stepConfig);
+    recordProgressCheckpoint(nextPosition, nowMs);
+    setPosition(nextPosition);
   }
 
   function jumpToTextMatch(query: string) {
     setAutoPaused(false);
-    stopPlayback();
+    const nowMs = finishSessionBeforeManualNavigation();
 
     const match = getPositionForTextMatch(query, sentences, stepConfig);
     if (!match) {
       return false;
     }
 
+    recordProgressCheckpoint(match, nowMs);
     setPosition(match);
     return true;
   }
@@ -1006,6 +1020,61 @@ export function App() {
     active.currentStepStartedAtMs = nowMs;
   }
 
+  function finishSessionBeforeManualNavigation() {
+    const nowMs = Date.now();
+    const current = currentReadingLocationRef.current;
+    const endLocation = current?.bookId === selectedBookId ? current.location : undefined;
+    finishReadingSession(nowMs, { endLocation });
+    stopPlayback();
+    return nowMs;
+  }
+
+  function recordProgressCheckpoint(
+    nextPosition: { sentenceIndex: number; tokenIndex: number; characterOffset?: number },
+    nowMs = Date.now(),
+  ) {
+    const current = currentReadingLocationRef.current;
+    if (!selectedBookId || current?.bookId !== selectedBookId) {
+      return;
+    }
+
+    const nextProgress = getProgressStats(
+      nextPosition,
+      sentences,
+      stepConfig,
+      tokenGroupsBySentenceId,
+    );
+    const endLocation = getReadingSessionLocation(nextPosition, nextProgress);
+    const furthestProgressCurrent = getFurthestProgressCurrent(
+      readingSessionsRef.current,
+      selectedBookId,
+      endLocation.progressTotal,
+    );
+    const startLocation = {
+      ...current.location,
+      progressCurrent: Math.max(
+        current.location.progressCurrent,
+        furthestProgressCurrent,
+      ),
+    };
+    if (!didReadingSessionAdvance(startLocation, endLocation)) {
+      return;
+    }
+
+    persistReadingSession({
+      id: createProgressCheckpointId(),
+      bookId: selectedBookId,
+      kind: "progress",
+      startedAt: new Date(nowMs).toISOString(),
+      endedAt: new Date(nowMs).toISOString(),
+      durationMs: 0,
+      wordCount: 0,
+      characterCount: 0,
+      startLocation,
+      endLocation,
+    });
+  }
+
   function finishReadingSession(
     nowMs = Date.now(),
     options: { updateState?: boolean; endLocation?: ReadingSessionLocation } = {},
@@ -1040,7 +1109,15 @@ export function App() {
       endLocation,
     };
 
-    if (options.updateState ?? true) {
+    persistReadingSession(session, options.updateState ?? true);
+  }
+
+  function persistReadingSession(session: ReadingSession, updateState = true) {
+    if (updateState) {
+      readingSessionsRef.current = mergeReadingSessions(
+        readingSessionsRef.current,
+        [session],
+      );
       setReadingSessions((previous) => [...previous, session]);
     }
     void saveReadingSession(session).catch((saveError) => {
@@ -1166,6 +1243,14 @@ function createReadingSessionId() {
   }
 
   return `reading:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+function createProgressCheckpointId() {
+  if ("randomUUID" in crypto) {
+    return `progress:${crypto.randomUUID()}`;
+  }
+
+  return `progress:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 }
 
 function createLookupEventId() {
@@ -1325,6 +1410,31 @@ function didReadingSessionAdvance(
   endLocation: ReadingSessionLocation,
 ) {
   return endLocation.progressCurrent > startLocation.progressCurrent;
+}
+
+function getFurthestProgressCurrent(
+  sessions: ReadingSession[],
+  bookId: string,
+  progressTotal: number,
+) {
+  let furthestProgressCurrent = 0;
+
+  for (const session of sessions) {
+    if (session.bookId !== bookId) {
+      continue;
+    }
+
+    for (const location of [session.startLocation, session.endLocation]) {
+      if (location?.progressTotal === progressTotal) {
+        furthestProgressCurrent = Math.max(
+          furthestProgressCurrent,
+          location.progressCurrent,
+        );
+      }
+    }
+  }
+
+  return furthestProgressCurrent;
 }
 
 function getMigakuBufferWindow(

@@ -179,7 +179,7 @@ export function getBookReadingStats(
   let lastReadMs = Number.NEGATIVE_INFINITY;
 
   for (const session of sessions) {
-    if (session.bookId !== bookId) {
+    if (session.bookId !== bookId || session.kind === "progress") {
       continue;
     }
 
@@ -421,7 +421,23 @@ export function getBookProgressDays(
     }
 
     const elapsedMs = bounds.endMs - bounds.startMs;
-    if (elapsedMs <= 0 || bounds.startMs >= rangeEndMs) {
+    if (bounds.startMs >= rangeEndMs) {
+      continue;
+    }
+
+    if (session.kind === "progress") {
+      if (bounds.startMs < rangeStartMs) {
+        cumulativeBeforeRange += progressPercent;
+      } else {
+        const day = daysByDate.get(getLocalDayKey(new Date(bounds.startMs)));
+        if (day) {
+          day.dailyPercent += progressPercent;
+        }
+      }
+      continue;
+    }
+
+    if (elapsedMs <= 0) {
       continue;
     }
 

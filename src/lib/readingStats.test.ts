@@ -197,6 +197,56 @@ describe("reading stats", () => {
     ]);
   });
 
+  it("attributes manually synchronized progress to the day it was entered", () => {
+    const sessions: ReadingSession[] = [
+      {
+        id: "in-app-day-one",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 10, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 10, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 10,
+        characterCount: 40,
+        startLocation: createLocation(0, 100),
+        endLocation: createLocation(10, 100),
+      },
+      {
+        id: "physical-book-sync",
+        bookId: "book:1",
+        kind: "progress",
+        startedAt: new Date(2026, 0, 11, 18, 0).toISOString(),
+        endedAt: new Date(2026, 0, 11, 18, 0).toISOString(),
+        durationMs: 0,
+        wordCount: 0,
+        characterCount: 0,
+        startLocation: createLocation(10, 100),
+        endLocation: createLocation(30, 100),
+      },
+      {
+        id: "in-app-day-three",
+        bookId: "book:1",
+        startedAt: new Date(2026, 0, 12, 9, 0).toISOString(),
+        endedAt: new Date(2026, 0, 12, 9, 10).toISOString(),
+        durationMs: 10 * 60_000,
+        wordCount: 10,
+        characterCount: 40,
+        startLocation: createLocation(30, 100),
+        endLocation: createLocation(31, 100),
+      },
+    ];
+
+    expect(getBookProgressDays(sessions, "book:1", new Date(2026, 0, 12, 12), 3)).toEqual([
+      { date: "2026-01-10", dailyPercent: 10, cumulativePercent: 10 },
+      { date: "2026-01-11", dailyPercent: 20, cumulativePercent: 30 },
+      { date: "2026-01-12", dailyPercent: 1, cumulativePercent: 31 },
+    ]);
+    expect(getBookReadingStats(sessions, "book:1")).toMatchObject({
+      totalDurationMs: 20 * 60_000,
+      sessionCount: 2,
+      activeDayCount: 2,
+    });
+  });
+
   it("calculates selected-book reading speed by day", () => {
     const sessions: ReadingSession[] = [
       {

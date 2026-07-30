@@ -115,6 +115,23 @@ test("imports an EPUB and reacts to Migaku-like parsed tokens", async ({ page },
   await expect(activeRsvpToken(page)).toHaveText("猫");
   await expectProgressCurrent(page, 1);
 
+  await expect
+    .poll(async () => {
+      const storedSessions = await loadStoredReadingSessions(page);
+      return storedSessions
+        .filter((session) => session.kind === "progress")
+        .map((session) => ({
+          start: session.startLocation?.progressCurrent,
+          end: session.endLocation?.progressCurrent,
+        }))
+        .sort((left, right) => (left.start ?? 0) - (right.start ?? 0));
+    })
+    .toEqual([
+      { start: 1, end: 2 },
+      { start: 2, end: 4 },
+      { start: 4, end: 7 },
+    ]);
+
   await expect(page.getByRole("button", { name: "Recap" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toHaveAttribute(
     "aria-expanded",
@@ -2119,6 +2136,24 @@ async function expectProgressCurrent(page: Page, current: number) {
   );
   await expect(page.locator(".reader-progress-value--full")).toHaveText(
     `${Math.round((current / Number(total)) * 100)}%`,
+  );
+}
+
+async function loadStoredReadingSessions(page: Page) {
+  return page.evaluate(
+    () =>
+      new Promise<ReadingSession[]>((resolve, reject) => {
+        const request = indexedDB.open("migaku-rsvp");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("readingSessions", "readonly");
+          const getAllRequest = transaction.objectStore("readingSessions").getAll();
+          getAllRequest.onerror = () => reject(getAllRequest.error);
+          getAllRequest.onsuccess = () => resolve(getAllRequest.result);
+          transaction.oncomplete = () => database.close();
+        };
+      }),
   );
 }
 
